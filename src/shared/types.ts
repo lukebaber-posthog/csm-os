@@ -1,0 +1,34 @@
+/** Types shared across the main, preload, and renderer processes. */
+
+/** One account in the signed-in CSM's book, as it comes back from PostHog. */
+export interface Account {
+  orgId: string
+  orgName: string
+  segment: string | null
+  /** Annual recurring revenue in USD. Never persisted to Supabase. */
+  arr: number | null
+  csmDateAssigned: string | null
+  isTamOverlay: boolean
+}
+
+/** Result of checking a stored PostHog credential. */
+export interface PostHogIdentity {
+  email: string
+  firstName: string | null
+  /** Which PostHog project the key resolved against. */
+  projectId: number
+}
+
+export interface AccountsPayload {
+  accounts: Account[]
+  /** ISO timestamp of the fetch that produced these accounts. */
+  fetchedAt: string
+  /** True when PostHog was unreachable and this came off the on-device cache. */
+  fromCache: boolean
+}
+
+/** Discriminated result so the renderer never has to parse thrown strings. */
+export type Result<T> = { ok: true; data: T } | { ok: false; error: string }
+
+export const TOUCH_CHANNELS = ['email', 'call', 'meeting', 'slack', 'other'] as const
+export type TouchChannel = (typeof TOUCH_CHANNELS)[number]

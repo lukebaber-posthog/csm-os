@@ -1,0 +1,111 @@
+@import 'tailwindcss';
+
+/*
+ * Dark mode is driven by a class on <html> rather than the OS preference,
+ * because the brief calls for light as the default with dark as an opt-in.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* Strictly monochrome. Hierarchy comes from weight and spacing, not hue. */
+  --color-page: #ffffff;
+  --color-surface: #fafafa;
+  --color-raised: #ffffff;
+  --color-line: #e5e5e5;
+  --color-line-strong: #d4d4d4;
+  --color-ink: #0a0a0a;
+  --color-ink-muted: #737373;
+  --color-ink-faint: #a3a3a3;
+
+  --font-sans:
+    ui-sans-serif, -apple-system, 'SF Pro Text', 'Inter', system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', monospace;
+}
+
+/*
+ * Card depth and tint tokens. These live as custom properties so the card
+ * styles can stay inline (highest specificity, no fighting Tailwind's layers)
+ * while still adapting to the theme: the component interpolates one RGB triple
+ * and CSS supplies the per-theme alpha.
+ */
+:root {
+  --card-shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 3px 10px -2px rgb(0 0 0 / 0.08);
+  --card-shadow-lift: 0 2px 4px rgb(0 0 0 / 0.07), 0 10px 24px -4px rgb(0 0 0 / 0.14);
+  --card-tint-alpha: 0.13;
+  --card-border-alpha: 0.34;
+  --card-glow-alpha: 0.3;
+}
+
+.dark {
+  --color-page: #0a0a0a;
+  --color-surface: #141414;
+  --color-raised: #1c1c1c;
+  --color-line: #262626;
+  --color-line-strong: #383838;
+  --color-ink: #fafafa;
+  --color-ink-muted: #a3a3a3;
+  --color-ink-faint: #6b6b6b;
+
+  /* Dark needs a heavier tint to register, and a wider glow to read as light. */
+  --card-shadow: 0 1px 2px rgb(0 0 0 / 0.5), 0 3px 12px -2px rgb(0 0 0 / 0.4);
+  --card-shadow-lift: 0 2px 6px rgb(0 0 0 / 0.55), 0 12px 28px -4px rgb(0 0 0 / 0.5);
+  --card-tint-alpha: 0.2;
+  --card-border-alpha: 0.42;
+  --card-glow-alpha: 0.34;
+}
+
+/*
+ * Note: do NOT add a bare `* { border-color: ... }` rule here. Tailwind emits
+ * its utilities inside @layer, and unlayered rules beat layered ones in the
+ * cascade, so a global selector would silently override every border-* utility
+ * (drag highlights, hover states, transparent drop zones). Borders set their
+ * own colour at the call site instead.
+ */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-page);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+/*
+ * `.dragging-card` carries no styles — the drag layer is styled with utilities.
+ * It stays on the element purely as a hook for spotting an in-flight drag when
+ * debugging or scripting the UI (see "Testing drag-and-drop" in the README).
+ */
+
+/* Slim, unobtrusive scrollbars so six columns don't look noisy. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line-strong);
+  border: 3px solid var(--color-page);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-ink-faint);
+}
+
+/* Electron: the inset traffic lights need a drag handle to sit beside. */
+.titlebar-drag {
+  -webkit-app-region: drag;
+}
+.titlebar-drag button,
+.titlebar-drag input,
+.titlebar-drag a {
+  -webkit-app-region: no-drag;
+}
