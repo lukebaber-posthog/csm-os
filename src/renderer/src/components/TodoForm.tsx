@@ -248,7 +248,7 @@ export function TodoForm({
                           putting the chip here also puts the chosen account's logo
                           on the closed selector — no separate trigger rendering. */}
                       <span className="flex min-w-0 items-center gap-2">
-                        <AccountChip orgId={a.orgId} orgName={a.orgName} size="sm" />
+                        <AccountChip orgId={a.orgId} orgName={a.orgName} domain={a.domain} size="sm" />
                         <span className="truncate">{a.orgName}</span>
                       </span>
                     </SelectItem>

@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { loadOrgNames, loadTodosCompletedSince, loadTouchesSince } from '../lib/board'
+import { LOGO_ATTRIBUTION_URL } from '../lib/logos'
 import { activityFileName, buildActivityMarkdown } from '../lib/exportActivity'
 import { requireBridge } from '../lib/bridge'
 import { startOfDaysAgoIso } from '../lib/format'
@@ -124,6 +125,24 @@ export function SettingsDialog({ open, email, onOpenChange }: Props) {
             {status}
           </p>
         )}
+
+        {/*
+          Required by logo.dev's free tier, which is why it is a real link rather
+          than a line of text. `target="_blank"` is load-bearing: the main
+          process's window-open handler sends it to the user's browser, whereas a
+          same-window navigation would replace the board with logo.dev's site.
+        */}
+        <p className="border-t border-[var(--color-line)] pt-3 text-[11px] text-[var(--color-ink-faint)]">
+          Company logos provided by{' '}
+          <a
+            href={LOGO_ATTRIBUTION_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-2 hover:text-[var(--color-ink-muted)]"
+          >
+            Logo.dev
+          </a>
+        </p>
       </DialogContent>
     </Dialog>
   )

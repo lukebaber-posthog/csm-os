@@ -20,6 +20,8 @@ import { TodoForm } from './TodoForm'
 export interface TodoAccount {
   orgId: string
   orgName: string
+  /** The account's website, for its logo. Null when Salesforce has none. */
+  domain: string | null
   color: CardColor | null
 }
 
@@ -55,7 +57,7 @@ export function TodoFace({
       <div className="flex min-h-[104px] flex-col gap-1.5">
         {account ? (
           <div className="flex items-center gap-1.5">
-            <AccountChip orgId={account.orgId} orgName={account.orgName} />
+            <AccountChip orgId={account.orgId} orgName={account.orgName} domain={account.domain} />
             <span
               className="min-w-0 flex-1 truncate text-[11px] leading-none text-[var(--color-ink-muted)]"
               title={account.orgName}

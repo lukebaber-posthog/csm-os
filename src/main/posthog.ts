@@ -77,17 +77,27 @@ export async function fetchAccounts(key: string, csmEmail: string): Promise<Acco
     throw new PostHogError(`"${csmEmail}" is not a valid email address.`)
   }
 
+  /*
+   * The join is only for the logo. Vitally's own account record carries the
+   * Salesforce fields, and `sfdc.Domain__c` is the account's website — which is
+   * what logo.dev looks a mark up by. It is a LEFT join because a missing
+   * domain must cost the account its logo, not its row; `coalesce` rather than
+   * `assumeNotNull` for the same reason, since an unmatched row's traits are
+   * genuinely NULL. Coverage is 295 of 304 accounts across every book.
+   */
   const hogql = `
     SELECT
-        organization_id,
-        organization_name,
-        segment,
-        arr,
-        toString(csm_date_assigned) AS csm_date_assigned,
-        is_tam_overlay
-    FROM vitally_csm_managed_accounts
-    WHERE customer_success_manager = '${csmEmail}'
-    ORDER BY organization_name
+        v.organization_id,
+        v.organization_name,
+        v.segment,
+        v.arr,
+        toString(v.csm_date_assigned) AS csm_date_assigned,
+        v.is_tam_overlay,
+        JSONExtractString(coalesce(a.traits, ''), 'sfdc.Domain__c') AS domain
+    FROM vitally_csm_managed_accounts v
+    LEFT JOIN vitally_accounts a ON a.external_id = v.organization_id
+    WHERE v.customer_success_manager = '${csmEmail}'
+    ORDER BY v.organization_name
     LIMIT 500
   `.trim()
 
@@ -112,6 +122,7 @@ export async function fetchAccounts(key: string, csmEmail: string): Promise<Acco
     segment: str(at(row, 'segment')),
     arr: at(row, 'arr') == null ? null : Number(at(row, 'arr')),
     csmDateAssigned: str(at(row, 'csm_date_assigned')),
-    isTamOverlay: Number(at(row, 'is_tam_overlay') ?? 0) === 1
+    isTamOverlay: Number(at(row, 'is_tam_overlay') ?? 0) === 1,
+    domain: str(at(row, 'domain'))
   }))
 }

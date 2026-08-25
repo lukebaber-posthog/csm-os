@@ -9,6 +9,13 @@ export interface Account {
   arr: number | null
   csmDateAssigned: string | null
   isTamOverlay: boolean
+  /**
+   * The account's own website domain, used to fetch its logo. Null when
+   * Salesforce has no domain for it (about 3% of accounts), which the chip
+   * renders as a monogram. Read at display time only — never persisted to
+   * Supabase.
+   */
+  domain: string | null
 }
 
 /** Result of checking a stored PostHog credential. */

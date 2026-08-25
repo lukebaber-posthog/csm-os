@@ -39,6 +39,13 @@ Two values are required. Both are read by the renderer at build time:
 | `VITE_SUPABASE_URL` | Supabase → Settings → API → Project URL | `https://abcdefgh.supabase.co` |
 | `VITE_SUPABASE_ANON_KEY` | Supabase → Settings → API → publishable key | `sb_publishable_…` |
 
+One more is optional. Without it the app runs fine, but every card shows a
+monogram instead of the account's logo (and says so once in the console):
+
+| Variable | Where it comes from | Looks like |
+| --- | --- | --- |
+| `VITE_PUBLIC_LOGO_DEV_API` | [logo.dev](https://logo.dev) publishable key | `pk_…` |
+
 Miss either one and **the app opens to a blank white window** — Vite inlines
 these at build time, so the build still succeeds and the renderer throws on
 load. There is no on-screen error; open the devtools console (View → Toggle
@@ -186,9 +193,9 @@ it while you drag near an edge.
   tinted across its whole background and casts a glow in the same hue; every
   card, coloured or not, carries a base shadow so the board has consistent depth.
 - **Each card carries the account's own logo** where the monogram used to be,
-  scraped from the company's website. Accounts with no usable logo keep the
-  monogram. See `assets/logos/SOURCES.md` for how domains are resolved and how
-  to re-run the scrape.
+  served by [logo.dev](https://logo.dev) from the account's website domain.
+  Accounts with no logo keep the monogram. See
+  [Where the logos come from](#where-the-logos-come-from).
 - **The channel pill** on each card records where that contact actually is:
   Slack, Gmail, Microsoft Teams, or Discord. It is a segmented slider — click a
   segment and the thumb slides to it; click the chosen segment again to clear it.
@@ -246,11 +253,58 @@ is a different population (464 rows against this view's 308, since it drops the
 `csm_effort_v6.tam` is the only column that names a TAM, and it holds display
 names rather than emails.
 
+## Where the logos come from
+
+[logo.dev](https://logo.dev), looked up by the account's own website domain,
+which rides along on the accounts query:
+
+```sql
+JSONExtractString(coalesce(a.traits, ''), 'sfdc.Domain__c') AS domain
+FROM vitally_csm_managed_accounts v
+LEFT JOIN vitally_accounts a ON a.external_id = v.organization_id
+```
+
+`AccountChip` turns that into
+`https://img.logo.dev/<domain>?token=…&size=128&format=png&theme=light&fallback=404`,
+with the token read from `VITE_PUBLIC_LOGO_DEV_API`. It is a publishable key, so
+it lives in `.env` next to the Supabase one rather than in the keychain with the
+PostHog key. Coverage is 295 of the 304 accounts across every book; the rest
+fall back to the monogram.
+
+**Why domain and not company name.** logo.dev will answer `name/Moonshot`, but
+it answers confidently rather than accurately. Checked against this book, the
+name endpoint returns a different company's mark for 5 of 31 accounts — the
+`Moonshot` it finds is not `moonshot.money`, and `T3 Tools Inc.` is not
+`ping.gg`. It also returns a real logo for names that do not exist at all
+("Aaaa Bbbb Cccc" resolves to some company's monogram), and `fallback=404` does
+not help: the name path counts those as hits. On the domain path a miss really
+does 404, which is what lets the chip fall back to its own monogram. A wrong
+logo on a customer's card is worse than no logo.
+
+**When a card wears the wrong mark**, add its org id to `DOMAIN_FIXES` in
+`lib/logos.ts`. Salesforce's `Domain__c` is right roughly nine times in ten;
+the map is for the rest. Silencer Shop's Salesforce domain resolves to
+BrandCave's wordmark and T3's to a stock cloud-platform screenshot, and two
+accounts have no domain there at all — those four are the current contents.
+
+This replaced a scraper that walked each account's site for an apple-touch-icon
+and committed the results to `assets/logos/`. It only ever worked for one
+person's book: logos were bundled by org id, so a new account showed a monogram
+until someone re-ran the script, and every other CSM's board was monograms
+throughout. Nothing needs running now.
+
+Note the CSP in `renderer/index.html` carries `img-src … https://img.logo.dev`.
+Without it Electron blocks every logo silently.
+
+> Free tier requires attribution, which is the Logo.dev link at the bottom of
+> the Settings dialog. Don't remove it without moving to a paid plan.
+
 ## What is stored where
 
 | Data | Location | Why |
 | --- | --- | --- |
-| Account names, ARR, segment | PostHog (live), cached on-device | ARR is deliberately kept out of Supabase |
+| Account names, ARR, segment, domain | PostHog (live), cached on-device | ARR is deliberately kept out of Supabase |
+| Account logos | logo.dev, by domain, at render time | Nothing stored or bundled; CDN-cached for a day |
 | Column placement, per layout | Supabase `board_placements` | Needs to persist and be editable |
 | Card colour, contact channel, account name | Supabase `board_cards` | Per-account, shared across layouts |
 | Columns, labels, order | Supabase `board_stages` (keyed by layout) | Renameable, reorderable, 2–10 per layout |
@@ -352,9 +406,6 @@ in the migration.
 ## Layout of the code
 
 ```
-scripts/
-  account-domains.json   Account -> website domain, resolved from user emails
-  fetch-logos.mjs        Scrapes account logos, regenerates lib/logos.ts
 src/
   shared/types.ts        Types crossing the process boundary
   main/
@@ -366,11 +417,10 @@ src/
     cache.ts             On-device account cache
   preload/index.ts       The only surface the renderer gets
   renderer/src/
-    assets/channels/     Vendored Slack / Gmail / Teams / Discord marks
-    assets/logos/        Scraped account logos (both dirs have a SOURCES.md)
+    assets/channels/     Vendored Slack / Gmail / Teams / Discord marks (SOURCES.md)
     lib/                 supabase client, all board queries, team (who may sign
-                         in), layouts, colours, channels, formatters, cn(),
-                         segmented (the shared pill recipe), logos.ts (generated)
+                         in), logos (logo.dev URLs), layouts, colours, channels,
+                         formatters, cn(), segmented (the shared pill recipe)
     hooks/               useBoard (board state machine), useTodos (the to-do
                          board), useTouchLog (one account's outreach log),
                          useTheme, useOutsideDismiss (click-away to close)

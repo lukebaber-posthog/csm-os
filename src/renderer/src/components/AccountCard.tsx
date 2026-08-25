@@ -51,6 +51,7 @@ export function CardFace({
         <AccountChip
           orgId={card.account.orgId}
           orgName={card.account.orgName}
+          domain={card.account.domain}
           onClick={onChipClick}
           label={`Change colour for ${card.account.orgName}`}
         />

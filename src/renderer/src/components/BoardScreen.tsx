@@ -120,6 +120,7 @@ export function BoardScreen({ email, theme, onToggleTheme, onSignOut }: Props) {
         .map((card) => ({
           orgId: card.account.orgId,
           orgName: card.account.orgName,
+          domain: card.account.domain,
           color: card.color
         }))
         .sort((a, b) => a.orgName.localeCompare(b.orgName)),

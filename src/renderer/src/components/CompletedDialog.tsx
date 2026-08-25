@@ -78,7 +78,12 @@ export function CompletedDialog({ open, email, accountOf, onRestore, onOpenChang
                   className="group flex items-start gap-2 rounded-md border border-transparent px-2 py-1.5 hover:border-[var(--color-line)] hover:bg-[var(--color-surface)]"
                 >
                   {account ? (
-                    <AccountChip orgId={account.orgId} orgName={account.orgName} size="sm" />
+                    <AccountChip
+                      orgId={account.orgId}
+                      orgName={account.orgName}
+                      domain={account.domain}
+                      size="sm"
+                    />
                   ) : (
                     <span aria-hidden className="h-4 w-4 shrink-0" />
                   )}
