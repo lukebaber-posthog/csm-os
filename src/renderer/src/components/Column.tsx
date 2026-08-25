@@ -8,6 +8,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import type { Column as ColumnModel } from '../hooks/useBoard'
 import type { CardColor } from '../lib/colors'
+import type { ContactChannel } from '../lib/channels'
 import { AccountCard } from './AccountCard'
 
 /** Droppable id prefixes, so a drag can tell what it is over. */
@@ -18,6 +19,7 @@ interface Props {
   column: ColumnModel
   onOpenAccount: (orgId: string) => void
   onSetColor: (orgId: string, color: CardColor | null) => void
+  onSetChannel: (orgId: string, channel: ContactChannel | null) => void
   onRename: (stageKey: string, label: string) => void
   onDelete: (stageKey: string) => void
   canDelete: boolean
@@ -29,6 +31,7 @@ export function Column({
   column,
   onOpenAccount,
   onSetColor,
+  onSetChannel,
   onRename,
   onDelete,
   canDelete,
@@ -176,6 +179,7 @@ export function Column({
               card={card}
               onOpen={onOpenAccount}
               onSetColor={onSetColor}
+              onSetChannel={onSetChannel}
             />
           ))}
         </SortableContext>

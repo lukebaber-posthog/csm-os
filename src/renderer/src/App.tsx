@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { MotionConfig } from 'motion/react'
 import { LoginScreen } from './components/LoginScreen'
 import { PostHogConnect } from './components/PostHogConnect'
 import { BoardScreen } from './components/BoardScreen'
@@ -67,6 +68,24 @@ export function App() {
   }
 
   return (
-    <BoardScreen email={email} theme={theme} onToggleTheme={toggle} onSignOut={() => void signOut()} />
+    /*
+     * reducedMotion="user" strips transform and layout animations from every
+     * motion component while keeping opacity, which is exactly the fallback the
+     * completion effects want. Note the deliberate asymmetry with dark mode: that
+     * is a class on <html> because the brief wanted light as the default with dark
+     * as an opt-in, whereas reduced motion IS read from the media query, because it
+     * is an accessibility signal from the OS rather than a style preference.
+     *
+     * This is not the only guard — it reaches neither the confetti canvas nor the
+     * CSS-keyframe effects, so lib/completionFx.ts short-circuits as well.
+     */
+    <MotionConfig reducedMotion="user">
+      <BoardScreen
+        email={email}
+        theme={theme}
+        onToggleTheme={toggle}
+        onSignOut={() => void signOut()}
+      />
+    </MotionConfig>
   )
 }

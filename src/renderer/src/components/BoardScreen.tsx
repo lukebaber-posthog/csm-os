@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useBoard } from '../hooks/useBoard'
+import { useTodos } from '../hooks/useTodos'
 import type { Theme } from '../hooks/useTheme'
 import { DEFAULT_LAYOUT, layoutDef } from '../lib/layouts'
 import { loadActiveLayout, setActiveLayout } from '../lib/board'
+import { isMainView, type MainView } from '../lib/views'
 import { TopBar } from './TopBar'
 import { Board } from './Board'
+import { TodoBoard } from './TodoBoard'
+import type { TodoAccount } from './TodoCard'
+import { CompletionFxLayer } from './CompletionFxLayer'
+import { SettingsDialog } from './SettingsDialog'
+import { CompletedDialog } from './CompletedDialog'
 import { AccountDrawer } from './AccountDrawer'
 import { Notice } from './ui/Notice'
 import { Spinner } from './ui/Spinner'
@@ -17,14 +24,28 @@ interface Props {
 }
 
 const LAYOUT_CACHE_KEY = 'csm-os:layout'
+const VIEW_CACHE_KEY = 'csm-os:view'
 
-/** The signed-in application: header, board, and the account detail panel. */
+/** The signed-in application: header, the active board, and the account panel. */
 export function BoardScreen({ email, theme, onToggleTheme, onSignOut }: Props) {
   // Seeded from localStorage so the board renders immediately, then reconciled
   // against Supabase (which is the cross-machine source of truth).
   const [layoutKey, setLayoutKey] = useState<string>(
     () => localStorage.getItem(LAYOUT_CACHE_KEY) ?? DEFAULT_LAYOUT
   )
+
+  /*
+   * The view is localStorage-only, with no Supabase column. A layout is *content*
+   * — which arrangement of the book you are working in — so it should follow you
+   * between machines. Which of two views is on screen is chrome: syncing it would
+   * cost a write per toggle plus a load-time reconcile effect that can flip the
+   * whole screen out from under you, which is tolerable for a column set and
+   * jarring for a view swap.
+   */
+  const [view, setView] = useState<MainView>(() => {
+    const saved = localStorage.getItem(VIEW_CACHE_KEY)
+    return isMainView(saved) ? saved : 'accounts'
+  })
 
   useEffect(() => {
     let active = true
@@ -51,8 +72,32 @@ export function BoardScreen({ email, theme, onToggleTheme, onSignOut }: Props) {
     [email]
   )
 
+  const changeView = useCallback((next: MainView) => {
+    setView(next)
+    localStorage.setItem(VIEW_CACHE_KEY, next)
+  }, [])
+
   const board = useBoard(email, layoutKey)
+  /*
+   * Loaded unconditionally, beside useBoard. One select of a few dozen rows is not
+   * worth a wrapper component to make the hook conditional, and loading both means
+   * switching views is instant with no spinner — which is the entire point of a
+   * pill rather than a route.
+   */
+  const todos = useTodos(email)
   const [openOrgId, setOpenOrgId] = useState<string | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [completedOpen, setCompletedOpen] = useState(false)
+
+  /*
+   * The native Settings item (Cmd+,) and the header button open the same dialog.
+   *
+   * Optional-chained on purpose: this runs during mount, so against a preload that
+   * predates the `menu` bridge an unguarded call throws inside an effect and takes
+   * the whole board down with it. Losing the keyboard shortcut is the right failure
+   * here — the header button still works.
+   */
+  useEffect(() => window.api?.menu?.onOpenSettings?.(() => setSettingsOpen(true)), [])
 
   const openCard = useMemo(() => {
     if (!openOrgId) return null
@@ -63,6 +108,31 @@ export function BoardScreen({ email, theme, onToggleTheme, onSignOut }: Props) {
     return null
   }, [openOrgId, board.columns])
 
+  /*
+   * The account facts a to-do needs, assembled from what useBoard has already
+   * loaded — so linking a to-do to an account costs no extra query, and the to-do
+   * inherits that account's card colour.
+   */
+  const todoAccounts = useMemo<TodoAccount[]>(
+    () =>
+      board.columns
+        .flatMap((col) => col.cards)
+        .map((card) => ({
+          orgId: card.account.orgId,
+          orgName: card.account.orgName,
+          color: card.color
+        }))
+        .sort((a, b) => a.orgName.localeCompare(b.orgName)),
+    [board.columns]
+  )
+
+  const accountById = useMemo(
+    () => new Map(todoAccounts.map((a) => [a.orgId, a])),
+    [todoAccounts]
+  )
+
+  const onAccounts = view === 'accounts'
+
   return (
     <div className="flex h-full flex-col bg-[var(--color-page)]">
       <TopBar
@@ -72,49 +142,102 @@ export function BoardScreen({ email, theme, onToggleTheme, onSignOut }: Props) {
         syncing={board.syncing}
         theme={theme}
         layoutKey={layoutKey}
+        view={view}
+        openTodoCount={todos.openCount}
+        doneTodayCount={todos.doneToday.length}
+        onViewChange={changeView}
         onLayoutChange={changeLayout}
         onToggleTheme={onToggleTheme}
-        onRefresh={() => void board.refresh()}
+        onOpenSettings={() => setSettingsOpen(true)}
+        // Sync renders in both views, so it must refresh both. Without the
+        // second call it looked like the obvious way to recover a to-do board
+        // that failed to load, and did nothing for it.
+        onRefresh={() => {
+          void board.refresh()
+          void todos.reload()
+        }}
         onSignOut={onSignOut}
       />
 
-      {(board.error || board.fromCache) && (
+      {/*
+        Each view surfaces its own failures. Note board.error still gets set by
+        useBoard while you are in the to-do view — a background sync failure — and
+        appears when you switch back, which is correct: useBoard is never unmounted
+        by the switch.
+      */}
+      {((onAccounts && (board.error || board.fromCache)) || (!onAccounts && todos.error)) && (
         <div className="space-y-2 px-6 pt-4">
-          {board.error && <Notice tone="error">{board.error}</Notice>}
-          {board.fromCache && !board.error && (
-            <Notice>
-              PostHog was unreachable, so this is the last synced copy of your book. Drag and
-              logging still work and save normally.
-            </Notice>
+          {onAccounts ? (
+            <>
+              {board.error && <Notice tone="error">{board.error}</Notice>}
+              {board.fromCache && !board.error && (
+                <Notice>
+                  PostHog was unreachable, so this is the last synced copy of your book. Drag
+                  and logging still work and save normally.
+                </Notice>
+              )}
+            </>
+          ) : (
+            <Notice tone="error">{todos.error}</Notice>
           )}
         </div>
       )}
 
-      <main className="flex min-h-0 flex-1 flex-col pt-4">
-        {board.loading ? (
+      <main
+        id="view-panel"
+        role="tabpanel"
+        aria-labelledby={`view-tab-${view}`}
+        className="flex min-h-0 flex-1 flex-col pt-4"
+      >
+        {/*
+          Every gate below is scoped to its own view. The empty-book one especially:
+          unscoped, `accountCount === 0` short-circuits this whole element, so a CSM
+          with nothing assigned in Vitally could never reach their to-dos at all.
+        */}
+        {onAccounts ? (
+          board.loading ? (
+            <div className="flex flex-1 items-center justify-center">
+              <Spinner label={`Loading the ${layoutDef(layoutKey).label.toLowerCase()} board…`} />
+            </div>
+          ) : board.accountCount === 0 && !board.error ? (
+            <div className="flex flex-1 items-center justify-center px-6">
+              <p className="max-w-sm text-center text-[13px] leading-relaxed text-[var(--color-ink-muted)]">
+                No accounts are assigned to {email} in Vitally. If that looks wrong, check that
+                your PostHog key can read the{' '}
+                <code className="font-mono text-[12px]">vitally_csm_managed_accounts</code> view.
+              </p>
+            </div>
+          ) : (
+            <Board
+              columns={board.columns}
+              onOpenAccount={setOpenOrgId}
+              onSetColor={board.setColor}
+              onSetChannel={board.setChannel}
+              onRename={board.rename}
+              onMove={board.move}
+              onAddColumn={board.addColumn}
+              onDeleteColumn={board.deleteColumn}
+              onReorderColumns={board.reorderColumns}
+              canAddColumn={board.canAddColumn}
+              canDeleteColumn={board.canDeleteColumn}
+            />
+          )
+        ) : todos.loading ? (
           <div className="flex flex-1 items-center justify-center">
-            <Spinner label={`Loading the ${layoutDef(layoutKey).label.toLowerCase()} board…`} />
-          </div>
-        ) : board.accountCount === 0 && !board.error ? (
-          <div className="flex flex-1 items-center justify-center px-6">
-            <p className="max-w-sm text-center text-[13px] leading-relaxed text-[var(--color-ink-muted)]">
-              No accounts are assigned to {email} in Vitally. If that looks wrong, check that your
-              PostHog key can read the{' '}
-              <code className="font-mono text-[12px]">vitally_csm_managed_accounts</code> view.
-            </p>
+            <Spinner label="Loading your to-dos…" />
           </div>
         ) : (
-          <Board
-            columns={board.columns}
-            onOpenAccount={setOpenOrgId}
-            onSetColor={board.setColor}
-            onRename={board.rename}
-            onMove={board.move}
-            onAddColumn={board.addColumn}
-            onDeleteColumn={board.deleteColumn}
-            onReorderColumns={board.reorderColumns}
-            canAddColumn={board.canAddColumn}
-            canDeleteColumn={board.canDeleteColumn}
+          <TodoBoard
+            columns={todos.columns}
+            accounts={todoAccounts}
+            doneTodayCount={todos.doneToday.length}
+            onAdd={todos.add}
+            onSave={todos.save}
+            onMove={todos.move}
+            onComplete={todos.complete}
+            onUndo={todos.undo}
+            onDelete={todos.remove}
+            onOpenCompleted={() => setCompletedOpen(true)}
           />
         )}
       </main>
@@ -124,9 +247,26 @@ export function BoardScreen({ email, theme, onToggleTheme, onSignOut }: Props) {
           email={email}
           card={openCard}
           onClose={() => setOpenOrgId(null)}
-          onTouchLogged={board.logTouch}
+          onSetChannel={board.setChannel}
+          onLatestTouchChange={board.setLastTouch}
         />
       )}
+
+      {/*
+        Mounted here rather than inside TodoBoard, so an effect keeps playing if you
+        flick back to the accounts view mid-flight.
+      */}
+      <SettingsDialog open={settingsOpen} email={email} onOpenChange={setSettingsOpen} />
+
+      <CompletedDialog
+        open={completedOpen}
+        email={email}
+        accountOf={(orgId) => (orgId ? accountById.get(orgId) : undefined)}
+        onRestore={todos.restore}
+        onOpenChange={setCompletedOpen}
+      />
+
+      <CompletionFxLayer />
     </div>
   )
 }

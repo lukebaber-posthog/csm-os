@@ -1,87 +1,45 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect } from 'react'
 import type { Card } from '../hooks/useBoard'
-import { TOUCH_CHANNELS, type TouchChannel } from '../../../shared/types'
-import { loadTouches, deleteTouch, type Touch } from '../lib/board'
+import { useTouchLog } from '../hooks/useTouchLog'
+import { CHANNEL_LABELS, type ContactChannel } from '../lib/channels'
 import { arrExact, contactAge } from '../lib/format'
-import { Button } from './ui/Button'
+import { Button } from '@/components/ui/button'
+import { ChannelSlider } from './ChannelSlider'
 import { Notice } from './ui/Notice'
-import { Spinner } from './ui/Spinner'
+import { TouchForm } from './TouchForm'
+import { TouchList } from './TouchList'
 
 interface Props {
   email: string
   card: Card
   onClose: () => void
-  onTouchLogged: (
-    orgId: string,
-    channel: TouchChannel,
-    note: string,
-    occurredAt: string
-  ) => Promise<void>
+  onSetChannel: (orgId: string, channel: ContactChannel | null) => void
+  /** Reports the account's new most-recent touch date to the board. */
+  onLatestTouchChange: (orgId: string, occurredAt: string | null) => void
 }
 
-/** Local date in yyyy-mm-dd, for the date input's default value. */
-function today(): string {
-  const d = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
-
-export function AccountDrawer({ email, card, onClose, onTouchLogged }: Props) {
-  const [touches, setTouches] = useState<Touch[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  const [channel, setChannel] = useState<TouchChannel>('email')
-  const [note, setNote] = useState('')
-  const [date, setDate] = useState(today())
-  const [saving, setSaving] = useState(false)
-
+export function AccountDrawer({
+  email,
+  card,
+  onClose,
+  onSetChannel,
+  onLatestTouchChange
+}: Props) {
   const orgId = card.account.orgId
+  const log = useTouchLog(email, orgId, onLatestTouchChange)
 
   useEffect(() => {
-    let active = true
-    setLoading(true)
-    setError(null)
-    loadTouches(email, orgId)
-      .then((rows) => active && setTouches(rows))
-      .catch((err: Error) => active && setError(err.message))
-      .finally(() => active && setLoading(false))
-    return () => {
-      active = false
+    const onKey = (e: KeyboardEvent) => {
+      // Radix layers (the channel select's popup) dismiss on Escape too and
+      // mark the event handled. Without this the first Escape would close the
+      // popup and the whole panel at once.
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      if (document.querySelector('[data-radix-popper-content-wrapper]')) return
+      onClose()
     }
-  }, [email, orgId])
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
-
-  async function submit(e: FormEvent) {
-    e.preventDefault()
-    setSaving(true)
-    setError(null)
-    // Anchor to midday so a date-only entry can't drift across a timezone edge.
-    const occurredAt = new Date(`${date}T12:00:00`).toISOString()
-    try {
-      await onTouchLogged(orgId, channel, note, occurredAt)
-      setTouches(await loadTouches(email, orgId))
-      setNote('')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not log the touch.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function remove(id: string) {
-    try {
-      await deleteTouch(id)
-      setTouches((prev) => prev.filter((t) => t.id !== id))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not delete the touch.')
-    }
-  }
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -102,7 +60,7 @@ export function AccountDrawer({ email, card, onClose, onTouchLogged }: Props) {
                 {card.account.isTamOverlay && ' · TAM overlay'}
               </p>
             </div>
-            <Button variant="ghost" onClick={onClose} aria-label="Close panel">
+            <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close panel">
               ✕
             </Button>
           </div>
@@ -130,92 +88,58 @@ export function AccountDrawer({ email, card, onClose, onTouchLogged }: Props) {
               </dd>
             </div>
           </dl>
+
+          {/* The same control as on the card, at a size that can carry a label —
+              which is also where clearing the choice is spelled out. */}
+          <div className="mt-4">
+            <p className="text-[12px] text-[var(--color-ink-faint)]">Reachable on</p>
+            <div className="mt-1.5 flex items-center gap-3">
+              <ChannelSlider
+                size="md"
+                value={card.channel}
+                onChange={(channel) => onSetChannel(orgId, channel)}
+              />
+              <span className="flex-1 text-[12px] text-[var(--color-ink-muted)]">
+                {card.channel ? CHANNEL_LABELS[card.channel] : 'Not set'}
+              </span>
+              {card.channel && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-[var(--color-ink-muted)]"
+                  onClick={() => onSetChannel(orgId, null)}
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
+          </div>
         </header>
 
-        <form onSubmit={submit} className="border-b border-[var(--color-line)] px-5 py-4">
+        <div className="border-b border-[var(--color-line)] px-5 py-4">
           <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-ink-muted)]">
             Log outreach
           </h3>
-
-          <div className="flex gap-2">
-            <select
-              value={channel}
-              onChange={(e) => setChannel(e.target.value as TouchChannel)}
-              className="h-9 rounded-md border border-[var(--color-line-strong)] bg-[var(--color-raised)] px-2 text-[13px] capitalize focus:border-[var(--color-ink)] focus:outline-none"
-            >
-              {TOUCH_CHANNELS.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-            <input
-              type="date"
-              value={date}
-              max={today()}
-              onChange={(e) => setDate(e.target.value)}
-              className="h-9 flex-1 rounded-md border border-[var(--color-line-strong)] bg-[var(--color-raised)] px-2 text-[13px] focus:border-[var(--color-ink)] focus:outline-none"
-            />
-          </div>
-
-          <textarea
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            rows={3}
-            placeholder="What did you cover? (optional)"
-            className="mt-2 w-full resize-none rounded-md border border-[var(--color-line-strong)] bg-[var(--color-raised)] px-3 py-2 text-[13px] placeholder:text-[var(--color-ink-faint)] focus:border-[var(--color-ink)] focus:outline-none"
-          />
-
-          <Button type="submit" className="mt-2 w-full" disabled={saving}>
-            {saving ? 'Saving…' : 'Log touch'}
-          </Button>
-        </form>
+          <TouchForm submitLabel="Log touch" onSubmit={log.add} />
+        </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
           <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-ink-muted)]">
             History
           </h3>
 
-          {error && (
+          {log.error && (
             <div className="mb-3">
-              <Notice tone="error">{error}</Notice>
+              <Notice tone="error">{log.error}</Notice>
             </div>
           )}
 
-          {loading ? (
-            <Spinner label="Loading history…" />
-          ) : touches.length === 0 ? (
-            <p className="text-[12px] text-[var(--color-ink-faint)]">
-              Nothing logged yet. This account counts as needing outreach.
-            </p>
-          ) : (
-            <ol className="space-y-3">
-              {touches.map((t) => (
-                <li
-                  key={t.id}
-                  className="group border-l-2 border-[var(--color-line-strong)] pl-3"
-                >
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-[12px] font-semibold capitalize">{t.channel}</span>
-                    <span className="shrink-0 font-mono text-[10px] tabular-nums text-[var(--color-ink-faint)]">
-                      {new Date(t.occurredAt).toLocaleDateString()}
-                    </span>
-                  </div>
-                  {t.note && (
-                    <p className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-[var(--color-ink-muted)]">
-                      {t.note}
-                    </p>
-                  )}
-                  <button
-                    onClick={() => remove(t.id)}
-                    className="mt-1 text-[11px] text-[var(--color-ink-faint)] opacity-0 transition-opacity hover:text-[var(--color-ink)] group-hover:opacity-100"
-                  >
-                    Delete
-                  </button>
-                </li>
-              ))}
-            </ol>
-          )}
+          <TouchList
+            touches={log.touches}
+            loading={log.loading}
+            onSave={log.save}
+            onDelete={log.remove}
+          />
         </div>
       </aside>
     </div>

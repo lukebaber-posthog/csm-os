@@ -1,37 +1,39 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { Card } from '../hooks/useBoard'
 import { STALE_AFTER_DAYS } from '../lib/layouts'
 import { cardSurfaceStyle, type CardColor } from '../lib/colors'
-import { arr, arrExact, contactAge, daysSince, monogram } from '../lib/format'
+import type { ContactChannel } from '../lib/channels'
+import { cn } from '@/lib/utils'
+import { arr, arrExact, contactAge, daysSince } from '../lib/format'
+import { AccountChip } from './AccountChip'
 import { CardColorToolbar } from './CardColorToolbar'
+import { ChannelSlider } from './ChannelSlider'
 
 interface Props {
   card: Card
   onOpen: (orgId: string) => void
   onSetColor: (orgId: string, color: CardColor | null) => void
+  onSetChannel: (orgId: string, channel: ContactChannel | null) => void
 }
 
 /** Presentational card body, shared by the sortable card and the drag overlay. */
 export function CardFace({
   card,
   dragging = false,
-  onChipClick
+  onChipClick,
+  onSetChannel
 }: {
   card: Card
   dragging?: boolean
   /** When provided the colour chip becomes an interactive button. */
   onChipClick?: (rect: DOMRect) => void
+  /** When provided the channel pill becomes operable. */
+  onSetChannel?: (channel: ContactChannel | null) => void
 }) {
   const age = daysSince(card.lastTouchedAt)
   const stale = age === null || age >= STALE_AFTER_DAYS
-  const chipRef = useRef<HTMLButtonElement>(null)
-
-  const chipClasses =
-    'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded border ' +
-    'border-[var(--color-line)] bg-[var(--color-surface)] font-mono text-[10px] ' +
-    'font-semibold text-[var(--color-ink-muted)]'
 
   return (
     <div
@@ -46,34 +48,12 @@ export function CardFace({
       style={cardSurfaceStyle(card.color, dragging)}
     >
       <div className="flex items-start gap-2.5">
-        {onChipClick ? (
-          <button
-            ref={chipRef}
-            type="button"
-            data-color-chip
-            title="Change colour"
-            aria-label={`Change colour for ${card.account.orgName}`}
-            // Keep both the drag sensor and the card's own click handler out of
-            // this: pointerdown would start a drag, click would open the panel.
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation()
-              const rect = chipRef.current?.getBoundingClientRect()
-              if (rect) onChipClick(rect)
-            }}
-            className={
-              chipClasses +
-              ' cursor-pointer transition-shadow hover:ring-2 hover:ring-[var(--color-line-strong)] ' +
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ink)]'
-            }
-          >
-            {monogram(card.account.orgName)}
-          </button>
-        ) : (
-          <span aria-hidden className={chipClasses}>
-            {monogram(card.account.orgName)}
-          </span>
-        )}
+        <AccountChip
+          orgId={card.account.orgId}
+          orgName={card.account.orgName}
+          onClick={onChipClick}
+          label={`Change colour for ${card.account.orgName}`}
+        />
 
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline justify-between gap-2">
@@ -91,11 +71,25 @@ export function CardFace({
             </span>
           </div>
 
-          <div className="mt-1.5 flex items-center gap-1.5">
+          {/* The pill sits inline with the contact age, absolutely positioned at
+              the right so unfurling it overlays the text instead of reflowing
+              the row. `min-h` reserves the pill's height, since an absolute
+              element contributes none. */}
+          <div className="relative mt-1.5 flex min-h-[26px] items-center gap-1.5 pr-8">
+            {/* First in the DOM so the age can react to its hover: Tailwind's
+                `peer` only reaches *later* siblings. Position is unaffected — the
+                pill is absolute either way. */}
+            <span className="peer/pill absolute right-0 top-1/2 -translate-y-1/2">
+              <ChannelSlider value={card.channel} onChange={onSetChannel} />
+            </span>
+
+            {/* The age steps aside while the pill is open. The track is
+                translucent, so without this the text would read through it. */}
             <span
               aria-hidden
               className={
-                'h-1.5 w-1.5 shrink-0 rounded-full ' +
+                'h-1.5 w-1.5 shrink-0 rounded-full transition-opacity ' +
+                'peer-hover/pill:opacity-0 peer-focus-within/pill:opacity-0 ' +
                 (stale
                   ? 'bg-[var(--color-ink)]'
                   : 'border border-[var(--color-ink-faint)] bg-transparent')
@@ -103,7 +97,8 @@ export function CardFace({
             />
             <span
               className={
-                'text-[11px] leading-none ' +
+                'truncate text-[11px] leading-none transition-opacity ' +
+                'peer-hover/pill:opacity-0 peer-focus-within/pill:opacity-0 ' +
                 (stale ? 'font-medium text-[var(--color-ink)]' : 'text-[var(--color-ink-muted)]')
               }
             >
@@ -116,7 +111,7 @@ export function CardFace({
   )
 }
 
-export function AccountCard({ card, onOpen, onSetColor }: Props) {
+export function AccountCard({ card, onOpen, onSetColor, onSetChannel }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: card.account.orgId,
     // Lets the board tell a card drag apart from a column drag.
@@ -129,8 +124,10 @@ export function AccountCard({ card, onOpen, onSetColor }: Props) {
       <div
         ref={setNodeRef}
         style={{ transform: CSS.Translate.toString(transform), transition }}
-        // The original slot stays in place but goes blank while the overlay drags.
-        className={isDragging ? 'opacity-0' : undefined}
+        // cursor-pointer sits here rather than on CardFace so it doesn't fight
+        // the drag overlay's cursor-grabbing. The original slot stays in place
+        // but goes blank while the overlay drags.
+        className={cn('cursor-pointer', isDragging && 'opacity-0')}
         {...attributes}
         {...listeners}
         role="button"
@@ -147,6 +144,7 @@ export function AccountCard({ card, onOpen, onSetColor }: Props) {
         <CardFace
           card={card}
           onChipClick={(rect) => setAnchor((open) => (open ? null : rect))}
+          onSetChannel={(channel) => onSetChannel(card.account.orgId, channel)}
         />
       </div>
 

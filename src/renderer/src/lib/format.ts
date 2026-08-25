@@ -51,6 +51,55 @@ export function syncAge(iso: string | null): string {
   return `Synced ${Math.floor(secs / 86_400)}d ago`
 }
 
+/*
+ * `<input type="date">` speaks yyyy-mm-dd in local time, Supabase speaks ISO.
+ * Both hops go through midday so a date-only entry can't drift across a
+ * timezone edge and land on the neighbouring day.
+ */
+
+/** Today as a date-input value, for defaults and `max`. */
+export function todayInput(): string {
+  return toDateInput(new Date().toISOString())
+}
+
+/** ISO timestamp -> yyyy-mm-dd in the viewer's timezone. */
+export function toDateInput(iso: string): string {
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/** yyyy-mm-dd -> ISO timestamp anchored at local midday. */
+export function fromDateInput(value: string): string {
+  return new Date(`${value}T12:00:00`).toISOString()
+}
+
+/**
+ * Local midnight today, as an ISO timestamp — the lower bound of a "done today"
+ * window.
+ *
+ * Deliberately NOT `fromDateInput(todayInput())`. That function anchors at
+ * midday on purpose, so a date-only entry can't drift across a timezone edge
+ * onto the neighbouring day — correct for a logged touch, and catastrophic for
+ * a count window, where a midday boundary silently drops everything completed
+ * before lunch.
+ */
+export function startOfTodayIso(): string {
+  return new Date(`${todayInput()}T00:00:00`).toISOString()
+}
+
+/**
+ * Local midnight `days` before today, as an ISO timestamp — the lower bound of a
+ * "last N days" window. Anchored at midnight for the same reason
+ * startOfTodayIso is, and stepped with setDate so month, year and DST rollovers
+ * are the platform's problem rather than ours.
+ */
+export function startOfDaysAgoIso(days: number): string {
+  const d = new Date(`${todayInput()}T00:00:00`)
+  d.setDate(d.getDate() - days)
+  return d.toISOString()
+}
+
 /** Two-letter monogram for the card avatar: "Clinical Notes AI" -> "CN". */
 export function monogram(name: string): string {
   const words = name.replace(/[^A-Za-z0-9 ]/g, ' ').trim().split(/\s+/)

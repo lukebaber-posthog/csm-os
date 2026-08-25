@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
-import { Button } from './ui/Button'
-import { Input } from './ui/Input'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Notice } from './ui/Notice'
 import { AuthShell } from './AuthShell'
 
@@ -89,7 +89,7 @@ export function PostHogConnect({
         {warning && <Notice tone="error">{warning}</Notice>}
 
         <div className="flex gap-2">
-          <Button type="button" variant="secondary" onClick={onBack} disabled={busy}>
+          <Button type="button" variant="outline" onClick={onBack} disabled={busy}>
             Back
           </Button>
           <Button type="submit" className="flex-1" disabled={busy || !key.trim()}>

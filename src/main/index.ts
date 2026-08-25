@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { app, shell, BrowserWindow, nativeTheme } from 'electron'
 import { registerIpc } from './ipc.js'
+import { buildMenu } from './menu.js'
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -23,6 +24,9 @@ function createWindow(): void {
   })
 
   win.on('ready-to-show', () => win.show())
+
+  // Rebuilt per window, because the Settings item targets this window's renderer.
+  buildMenu(win)
 
   // Keep external links in the user's browser rather than in an app window.
   win.webContents.setWindowOpenHandler(({ url }) => {

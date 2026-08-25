@@ -1,4 +1,6 @@
-import { ipcMain } from 'electron'
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import type { AccountsPayload, PostHogIdentity, Result } from '../shared/types.js'
 import { hasKey, readKey, writeKey, clearKey } from './secrets.js'
 import { fetchAccounts, verifyKey, PostHogError } from './posthog.js'
@@ -65,6 +67,29 @@ export function registerIpc(): void {
       return { accounts: cached.accounts, fetchedAt: cached.fetchedAt, fromCache: true }
     }
   })
+
+  /**
+   * Writes a generated file wherever the user chooses.
+   *
+   * A save dialog rather than a silent drop into Downloads: an export the user
+   * asked for is something they then have to find, and the renderer has no
+   * filesystem access by design — this is the only place the write can happen.
+   * Returns null when the dialog is dismissed, which is not an error.
+   */
+  handle(
+    'files:saveText',
+    async (args: { fileName: string; contents: string }): Promise<string | null> => {
+      const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+      const { canceled, filePath } = await dialog.showSaveDialog(win, {
+        title: 'Export activity',
+        defaultPath: join(app.getPath('downloads'), args.fileName),
+        filters: [{ name: 'Markdown', extensions: ['md'] }]
+      })
+      if (canceled || !filePath) return null
+      writeFileSync(filePath, args.contents, 'utf8')
+      return filePath
+    }
+  )
 
   ipcMain.handle('posthog:hasStoredKey', () => hasKey())
 }

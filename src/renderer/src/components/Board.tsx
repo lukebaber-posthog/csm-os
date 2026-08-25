@@ -22,6 +22,8 @@ import {
 } from '@dnd-kit/sortable'
 import type { Column as ColumnModel } from '../hooks/useBoard'
 import type { CardColor } from '../lib/colors'
+import type { ContactChannel } from '../lib/channels'
+import { DROP_ANIM } from '../lib/motion'
 import { Column, COLUMN_PREFIX, STAGE_PREFIX } from './Column'
 import { CardFace } from './AccountCard'
 import { AddColumn } from './AddColumn'
@@ -30,6 +32,7 @@ interface Props {
   columns: ColumnModel[]
   onOpenAccount: (orgId: string) => void
   onSetColor: (orgId: string, color: CardColor | null) => void
+  onSetChannel: (orgId: string, channel: ContactChannel | null) => void
   onRename: (stageKey: string, label: string) => void
   onMove: (orgId: string, toStageKey: string, toIndex: number) => void
   onAddColumn: (label: string) => void
@@ -68,6 +71,7 @@ export function Board({
   columns,
   onOpenAccount,
   onSetColor,
+  onSetChannel,
   onRename,
   onMove,
   onAddColumn,
@@ -205,6 +209,7 @@ export function Board({
               column={column}
               onOpenAccount={onOpenAccount}
               onSetColor={onSetColor}
+              onSetChannel={onSetChannel}
               onRename={onRename}
               onDelete={onDeleteColumn}
               canDelete={canDeleteColumn}
@@ -216,7 +221,7 @@ export function Board({
         <AddColumn canAdd={canAddColumn} count={columns.length} onAdd={onAddColumn} />
       </div>
 
-      <DragOverlay dropAnimation={{ duration: 180, easing: 'cubic-bezier(0.2, 0, 0, 1)' }}>
+      <DragOverlay dropAnimation={DROP_ANIM}>
         {activeCard && (
           <div className="dragging-card w-[212px] rotate-1 cursor-grabbing">
             <CardFace card={activeCard} dragging />

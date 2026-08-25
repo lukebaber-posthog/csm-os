@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Account, TouchChannel } from '../../../shared/types'
+import type { Account } from '../../../shared/types'
 import { MAX_COLUMNS, MIN_COLUMNS, type Stage } from '../lib/layouts'
 import type { CardColor } from '../lib/colors'
+import type { ContactChannel } from '../lib/channels'
 import {
   loadStages,
   loadPlacements,
-  loadCardColors,
+  loadCardProps,
   loadLastTouches,
   ensureCards,
   reconcilePlacements,
@@ -14,9 +15,9 @@ import {
   addStage,
   deleteStage,
   reorderStages,
-  addTouch,
   setCardColor,
-  POSITION_STEP,
+  setCardChannel,
+  positionFor,
   type Placement
 } from '../lib/board'
 
@@ -26,6 +27,7 @@ export interface Card {
   position: number
   lastTouchedAt: string | null
   color: CardColor | null
+  channel: ContactChannel | null
 }
 
 export interface Column {
@@ -50,31 +52,19 @@ interface BoardState {
   canAddColumn: boolean
   canDeleteColumn: boolean
   setColor: (orgId: string, color: CardColor | null) => Promise<void>
-  logTouch: (
-    orgId: string,
-    channel: TouchChannel,
-    note: string,
-    occurredAt: string
-  ) => Promise<void>
-}
-
-/**
- * Decides the float position a card should take when dropped at `toIndex`
- * within `siblings` (which must already exclude the card being moved).
- * Midpointing between neighbours means a drop rewrites one row, not the column.
- */
-function positionFor(siblings: Card[], toIndex: number): number {
-  const prev = siblings[toIndex - 1]
-  const next = siblings[toIndex]
-  if (!prev && !next) return POSITION_STEP
-  if (!prev) return next.position - POSITION_STEP
-  if (!next) return prev.position + POSITION_STEP
-  return (prev.position + next.position) / 2
+  setChannel: (orgId: string, channel: ContactChannel | null) => Promise<void>
+  /**
+   * Adopts a new most-recent-touch date for one account. The account panel owns
+   * the touch log itself and reports the recomputed latest date here, so adding,
+   * editing, or deleting a touch all move the card's counter the same way.
+   */
+  setLastTouch: (orgId: string, occurredAt: string | null) => void
 }
 
 export function useBoard(email: string, layoutKey: string): BoardState {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [colors, setColors] = useState<Record<string, CardColor>>({})
+  const [channels, setChannels] = useState<Record<string, ContactChannel>>({})
   const [lastTouches, setLastTouches] = useState<Record<string, string>>({})
   const [stages, setStages] = useState<Stage[]>([])
   const [placements, setPlacements] = useState<Placement[]>([])
@@ -107,16 +97,18 @@ export function useBoard(email: string, layoutKey: string): BoardState {
         if (!result.ok) throw new Error(result.error)
         const { accounts: fetched, fetchedAt: at, fromCache: cached } = result.data
 
-        // A board_cards row must exist before a colour can be stored on it.
+        // A board_cards row must exist before a colour or channel can be
+        // stored on it.
         await ensureCards(email, fetched)
-        const [colorMap, touchMap] = await Promise.all([
-          loadCardColors(email),
+        const [cardProps, touchMap] = await Promise.all([
+          loadCardProps(email),
           loadLastTouches(email)
         ])
 
         if (!alive.current) return
         setAccounts(fetched)
-        setColors(colorMap)
+        setColors(cardProps.colors)
+        setChannels(cardProps.channels)
         setLastTouches(touchMap)
         setFetchedAt(at)
         setFromCache(cached)
@@ -184,12 +176,13 @@ export function useBoard(email: string, layoutKey: string): BoardState {
             stageKey: p.stageKey,
             position: p.position,
             lastTouchedAt: lastTouches[a.orgId] ?? null,
-            color: colors[a.orgId] ?? null
+            color: colors[a.orgId] ?? null,
+            channel: channels[a.orgId] ?? null
           }
         })
         .sort((x, y) => x.position - y.position)
     }))
-  }, [accounts, placements, stages, lastTouches, colors])
+  }, [accounts, placements, stages, lastTouches, colors, channels])
 
   const move = useCallback(
     async (orgId: string, toStageKey: string, toIndex: number) => {
@@ -316,24 +309,35 @@ export function useBoard(email: string, layoutKey: string): BoardState {
     [colors, email]
   )
 
-  const logTouch = useCallback(
-    async (orgId: string, channel: TouchChannel, note: string, occurredAt: string) => {
+  const setChannel = useCallback(
+    async (orgId: string, channel: ContactChannel | null) => {
+      const previous = channels
+      setChannels((prev) => {
+        const next = { ...prev }
+        if (channel) next[orgId] = channel
+        else delete next[orgId]
+        return next
+      })
       try {
-        await addTouch(email, orgId, channel, note, occurredAt)
-        if (!alive.current) return
-        // Only advance the counter when this touch is the most recent one.
-        setLastTouches((prev) => {
-          const current = prev[orgId]
-          if (current && new Date(current) > new Date(occurredAt)) return prev
-          return { ...prev, [orgId]: occurredAt }
-        })
+        await setCardChannel(email, orgId, channel)
       } catch (err) {
         if (!alive.current) return
-        setError(err instanceof Error ? err.message : 'Could not log the touch.')
+        setChannels(previous)
+        setError(err instanceof Error ? err.message : 'Could not change the contact channel.')
       }
     },
-    [email]
+    [channels, email]
   )
+
+  const setLastTouch = useCallback((orgId: string, occurredAt: string | null) => {
+    setLastTouches((prev) => {
+      if ((prev[orgId] ?? null) === occurredAt) return prev
+      const next = { ...prev }
+      if (occurredAt) next[orgId] = occurredAt
+      else delete next[orgId]
+      return next
+    })
+  }, [])
 
   const refresh = useCallback(() => loadAccounts(false), [loadAccounts])
 
@@ -354,6 +358,7 @@ export function useBoard(email: string, layoutKey: string): BoardState {
     canAddColumn: stages.length < MAX_COLUMNS,
     canDeleteColumn: stages.length > MIN_COLUMNS,
     setColor,
-    logTouch
+    setChannel,
+    setLastTouch
   }
 }

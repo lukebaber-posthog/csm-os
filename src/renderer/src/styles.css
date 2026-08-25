@@ -1,4 +1,14 @@
 @import 'tailwindcss';
+/*
+ * Radix `data-[state]`-driven enter/exit for the vendored shadcn surface, which is
+ * written against `animate-in` / `fade-in-0` / `zoom-in-95` and friends. Without
+ * this those classes are inert: dialogs and select popups appear instantly. Doing
+ * the same with motion would mean forceMount plus an AnimatePresence around every
+ * Radix portal, which is a known misery — so the division of labour is
+ * tw-animate-css for the primitives, motion for this app's own bespoke motion,
+ * and plain CSS transitions for anything expressible as one property change.
+ */
+@import 'tw-animate-css';
 
 /*
  * Dark mode is driven by a class on <html> rather than the OS preference,
@@ -17,9 +27,172 @@
   --color-ink-muted: #737373;
   --color-ink-faint: #a3a3a3;
 
+  /*
+   * The radius scale, one step softer than Tailwind's default the whole way up:
+   * what was `rounded-lg` is now what `rounded-xl` used to be, and so on. Set as
+   * tokens rather than by editing call sites, so every card, field, dialog and
+   * popover moves together and there is one place to retune it.
+   *
+   * `--radius` is the bare `rounded` utility, which the chips and the small
+   * hover actions use; it is bumped with the rest or those stay visibly sharper
+   * than everything around them.
+   *
+   * `rounded-full` is unaffected — the pills stay pills.
+   */
+  --radius: 0.375rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+
+  /*
+   * A form field's own depth. Softer and wider than shadcn's `shadow-xs`, which
+   * is what the vendored inputs ship with: paired with a muted border it reads as
+   * the field sitting slightly proud of the card, where a hard hairline read as
+   * four boxes drawn on top of one another.
+   *
+   * Two tokens and a `dark:` variant at the call site, rather than one token
+   * overridden under `.dark`. Tailwind inlines a `--shadow-*` value into
+   * `--tw-shadow` at build time — it composes with `--tw-shadow-color` and so
+   * cannot stay a `var()` — which means redefining the token in `.dark` reaches
+   * nothing. Two utilities is the shape that actually works.
+   */
+  --shadow-field: 0 1px 2px rgb(0 0 0 / 0.04), 0 1px 3px -1px rgb(0 0 0 / 0.06);
+  /* Black on near-black is invisible, so dark leans on one denser, tighter
+     shadow and lets the border do most of the separating. */
+  --shadow-field-dark: 0 1px 2px rgb(0 0 0 / 0.45);
+
   --font-sans:
     ui-sans-serif, -apple-system, 'SF Pro Text', 'Inter', system-ui, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', monospace;
+
+  /*
+   * The app's one easing curve. It began as an inline arbitrary value in
+   * ChannelSlider; a second and third consumer (the view pill and the
+   * completion effects) makes it a token.
+   *
+   * Duplicated as EASE_SWIFT in lib/motion.ts, deliberately. motion types
+   * easing as a [number, number, number, number] tuple and rejects a CSS
+   * cubic-bezier() string outright, while Tailwind needs the CSS form to build
+   * the `ease-swift` utility. Four numbers in two places, each commented to
+   * point at the other, beats reading the variable back out of
+   * getComputedStyle at runtime.
+   */
+  --ease-swift: cubic-bezier(0.2, 0, 0, 1);
+
+  /*
+   * The completion effects, and the project's first @keyframes.
+   *
+   * Keyframes rather than motion components on purpose: shatter renders 8
+   * shards and dissolve 18 cells, each needing its own trajectory and delay.
+   * One keyframe reading per-element inline custom properties is 26
+   * GPU-composited animations with zero JS per frame — the same
+   * inline-vars-feeding-a-utility pattern ChannelSlider already uses for its
+   * widths. motion is kept for the two things CSS genuinely cannot do here:
+   * exit animations (AnimatePresence) and re-triggered one-shots (useAnimate).
+   *
+   * Declaring each @keyframes inside @theme beside its --animate-* variable is
+   * the Tailwind v4 pattern, and it keeps the call site an ordinary utility
+   * class. Nothing here animates anything but transform and opacity: Electron
+   * means a known GPU-composited Chromium, so that set is the safe one and
+   * there is no reason to leave it.
+   *
+   * `forwards` rather than `both` — the from state is `transform: none`, which
+   * is also the unanimated state, so `both` would buy nothing.
+   */
+  --animate-fx-shard: fx-shard 380ms var(--ease-swift) forwards;
+  --animate-fx-grain: fx-grain 320ms var(--ease-swift) forwards;
+  --animate-fx-ring: fx-ring 300ms var(--ease-swift) forwards;
+
+  @keyframes fx-shard {
+    0% {
+      transform: none;
+      opacity: 1;
+    }
+    /* Opacity holds, then drops. Fading linearly across the whole flight makes
+       the shards ghosts before they have travelled anywhere. */
+    55% {
+      opacity: 1;
+    }
+    100% {
+      transform: translate3d(var(--fx-dx), var(--fx-dy), 0) rotate(var(--fx-rot))
+        scale(var(--fx-scale));
+      opacity: 0;
+    }
+  }
+
+  @keyframes fx-grain {
+    0% {
+      transform: none;
+      opacity: 1;
+    }
+    100% {
+      transform: translate3d(var(--fx-dx), var(--fx-dy), 0);
+      opacity: 0;
+    }
+  }
+
+  @keyframes fx-ring {
+    0% {
+      transform: scale(1);
+      opacity: 0.55;
+    }
+    100% {
+      transform: scale(1.7);
+      opacity: 0;
+    }
+  }
+}
+
+/*
+ * shadcn/ui token bridge.
+ *
+ * Vendored shadcn components are written against `bg-primary`,
+ * `text-muted-foreground`, `border-input`, `ring-ring` and friends. Rather than
+ * adopt shadcn's own palette — which would mean two competing colour systems —
+ * each of its names points at the monochrome token above. `inline` makes the
+ * utilities emit `var(--color-ink)` rather than a copy of its value, so a
+ * shadcn component picks up the `.dark` overrides for free.
+ *
+ * Consequence worth knowing: restyling the app means editing the tokens above,
+ * never the shadcn component source, which stays close to upstream.
+ */
+@theme inline {
+  --color-background: var(--color-page);
+  --color-foreground: var(--color-ink);
+  --color-card: var(--color-raised);
+  --color-card-foreground: var(--color-ink);
+  --color-popover: var(--color-raised);
+  --color-popover-foreground: var(--color-ink);
+  --color-primary: var(--color-ink);
+  --color-primary-foreground: var(--color-page);
+  --color-secondary: var(--color-surface);
+  --color-secondary-foreground: var(--color-ink);
+  --color-muted: var(--color-surface);
+  --color-muted-foreground: var(--color-ink-muted);
+  --color-accent: var(--color-surface);
+  --color-accent-foreground: var(--color-ink);
+  --color-border: var(--color-line);
+  /*
+   * Muted, deliberately. This was `--color-line-strong`, which drew a hard edge
+   * around every input, textarea and select trigger — on the to-do composer, four
+   * stacked fields inside a bordered card, that read as a stack of boxes. The
+   * lighter line plus `--shadow-field` separates them by depth instead.
+   */
+  --color-input: var(--color-line);
+  /*
+   * The focus halo, muted. It was `--color-ink`, which shadcn spends twice —
+   * `focus-visible:border-ring` plus a 3px `ring-ring/50` — so a focused field
+   * wore a solid black border inside a black halo. The composer autofocuses its
+   * title, so that fired every single time it opened. Faint ink is still
+   * unmistakably a focus ring against both themes without being the loudest
+   * thing on the board.
+   */
+  --color-ring: var(--color-ink-faint);
+  /* The one hue in the set: a board of monochrome cards still needs a
+     validation state that reads as wrong. Matches the red in lib/colors.ts. */
+  --color-destructive: rgb(220 38 38);
 }
 
 /*

@@ -1,6 +1,8 @@
 import { supabase } from './supabase'
 import { LAYOUTS, intakeStageOf, layoutDef, type Layout, type Stage } from './layouts'
 import { isCardColor, type CardColor } from './colors'
+import { isContactChannel, type ContactChannel } from './channels'
+import { isTodoBucket, isTodoKind, type TodoBucket, type TodoKind } from './todos'
 import type { Account, TouchChannel } from '../../../shared/types'
 
 /** Every Supabase read and write the app performs. Components stay presentational. */
@@ -20,6 +22,47 @@ export interface Touch {
   occurredAt: string
 }
 
+/** The editable body of a touch — everything except who and which account. */
+export interface TouchValues {
+  channel: TouchChannel
+  note: string
+  occurredAt: string
+}
+
+export interface Todo {
+  id: string
+  title: string
+  note: string | null
+  bucket: TodoBucket
+  position: number
+  /** What it is about: an account, a pull request, or your own work. */
+  kind: TodoKind
+  /** The account this is about. Only ever set when `kind` is 'account'. */
+  orgId: string | null
+  /** Null while open. Set once completed; the board reads only null rows. */
+  completedAt: string | null
+  createdAt: string
+}
+
+/**
+ * The editable body of a to-do — everything the form owns. Excludes `position`
+ * (drag owns it) and `completedAt` (the completion rail owns it), the same way
+ * TouchValues excludes `id` and `orgId`.
+ */
+export interface TodoValues {
+  title: string
+  note: string
+  bucket: TodoBucket
+  kind: TodoKind
+  orgId: string | null
+}
+
+/** Per-account card properties, keyed by org id. */
+export interface CardProps {
+  colors: Record<string, CardColor>
+  channels: Record<string, ContactChannel>
+}
+
 /** Gap between card positions, leaving room to drop between neighbours. */
 const POSITION_STEP = 1000
 
@@ -27,15 +70,44 @@ function fail(context: string, error: { message: string } | null): void {
   if (error) throw new Error(`${context}: ${error.message}`)
 }
 
-/** True when the email is on the allowlist. This is the whole login check. */
-export async function isAllowlisted(email: string): Promise<boolean> {
-  const { data, error } = await supabase
+/**
+ * The float position a row should take when dropped at `toIndex` within
+ * `siblings`, which must already exclude the row being moved. Midpointing
+ * between neighbours means a drop rewrites one row, not the whole column.
+ *
+ * Structurally typed rather than taking a Card, because both boards use it.
+ */
+export function positionFor(
+  siblings: readonly { position: number }[],
+  toIndex: number
+): number {
+  const prev = siblings[toIndex - 1]
+  const next = siblings[toIndex]
+  if (!prev && !next) return POSITION_STEP
+  if (!prev) return next.position - POSITION_STEP
+  if (!next) return prev.position + POSITION_STEP
+  return (prev.position + next.position) / 2
+}
+
+/**
+ * Records the signed-in user. Not a permission check — `lib/team` decides who
+ * may sign in — but the row the rest of the schema hangs on.
+ *
+ * `csm_users` used to be the login gate and is now a registry, because every
+ * other table carries `csm_email` with a foreign key to this one. Without a row
+ * here the first write of a new session (seeding `board_layouts`) fails on the
+ * constraint and the board never opens, so loosening the gate without this would
+ * just move the rejection somewhere less legible.
+ *
+ * `ignoreDuplicates` makes it ON CONFLICT DO NOTHING, so an existing user keeps
+ * their `active_layout` and a returning sign-in costs one no-op statement rather
+ * than a read to decide whether to write.
+ */
+export async function registerUser(email: string): Promise<void> {
+  const { error } = await supabase
     .from('csm_users')
-    .select('email')
-    .eq('email', email)
-    .maybeSingle()
-  fail('Could not verify the email', error)
-  return data !== null
+    .upsert({ email }, { onConflict: 'email', ignoreDuplicates: true })
+  fail('Could not sign you in', error)
 }
 
 // --- Layouts ---------------------------------------------------------------
@@ -213,19 +285,24 @@ export async function ensureCards(email: string, accounts: Account[]): Promise<v
   fail('Could not register accounts', error)
 }
 
-export async function loadCardColors(email: string): Promise<Record<string, CardColor>> {
+/**
+ * Colour and contact channel in one round trip — they live on the same row, so
+ * splitting them into two queries would only cost a second request.
+ */
+export async function loadCardProps(email: string): Promise<CardProps> {
   const { data, error } = await supabase
     .from('board_cards')
-    .select('org_id,color')
+    .select('org_id,color,contact_channel')
     .eq('csm_email', email)
-    .not('color', 'is', null)
-  fail('Could not load card colours', error)
+  fail('Could not load card properties', error)
 
-  const out: Record<string, CardColor> = {}
+  const props: CardProps = { colors: {}, channels: {} }
   for (const row of data ?? []) {
-    if (isCardColor(row.color)) out[row.org_id as string] = row.color
+    const orgId = row.org_id as string
+    if (isCardColor(row.color)) props.colors[orgId] = row.color
+    if (isContactChannel(row.contact_channel)) props.channels[orgId] = row.contact_channel
   }
-  return out
+  return props
 }
 
 /** Sets or clears a card's accent colour. Pass null to return it to monochrome. */
@@ -240,6 +317,20 @@ export async function setCardColor(
     .eq('csm_email', email)
     .eq('org_id', orgId)
   fail('Could not change the card colour', error)
+}
+
+/** Sets or clears the service this account's contact is reachable on. */
+export async function setCardChannel(
+  email: string,
+  orgId: string,
+  channel: ContactChannel | null
+): Promise<void> {
+  const { error } = await supabase
+    .from('board_cards')
+    .update({ contact_channel: channel, updated_at: new Date().toISOString() })
+    .eq('csm_email', email)
+    .eq('org_id', orgId)
+  fail('Could not change the contact channel', error)
 }
 
 // --- Placements (per layout) ----------------------------------------------
@@ -356,23 +447,313 @@ export async function loadTouches(email: string, orgId: string): Promise<Touch[]
 export async function addTouch(
   email: string,
   orgId: string,
-  channel: TouchChannel,
-  note: string,
-  occurredAt: string
+  values: TouchValues
 ): Promise<void> {
   const { error } = await supabase.from('touches').insert({
     csm_email: email,
     org_id: orgId,
-    channel,
-    note: note.trim() || null,
-    occurred_at: occurredAt
+    channel: values.channel,
+    note: values.note.trim() || null,
+    occurred_at: values.occurredAt
   })
   fail('Could not log the touch', error)
+}
+
+/** Rewrites an existing touch. The account it belongs to never changes. */
+export async function updateTouch(id: string, values: TouchValues): Promise<void> {
+  const { error } = await supabase
+    .from('touches')
+    .update({
+      channel: values.channel,
+      note: values.note.trim() || null,
+      occurred_at: values.occurredAt
+    })
+    .eq('id', id)
+  fail('Could not save the touch', error)
 }
 
 export async function deleteTouch(id: string): Promise<void> {
   const { error } = await supabase.from('touches').delete().eq('id', id)
   fail('Could not delete the touch', error)
+}
+
+// --- Activity export -------------------------------------------------------
+
+/**
+ * A logged touch with everything the export needs. Separate from `Touch`, which
+ * is the account panel's editable shape and deliberately has no `replied` — the
+ * export cares whether the account answered, the panel does not edit it.
+ */
+export interface ActivityTouch {
+  id: string
+  orgId: string
+  channel: TouchChannel
+  note: string | null
+  occurredAt: string
+  replied: boolean
+}
+
+/** Every touch logged since `sinceIso`, across all accounts, newest first. */
+export async function loadTouchesSince(
+  email: string,
+  sinceIso: string
+): Promise<ActivityTouch[]> {
+  const { data, error } = await supabase
+    .from('touches')
+    .select('id,org_id,channel,note,occurred_at,replied')
+    .eq('csm_email', email)
+    .gte('occurred_at', sinceIso)
+    .order('occurred_at', { ascending: false })
+  fail('Could not load your contact history', error)
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    orgId: r.org_id as string,
+    channel: r.channel as TouchChannel,
+    note: (r.note as string | null) ?? null,
+    occurredAt: r.occurred_at as string,
+    replied: r.replied === true
+  }))
+}
+
+/** Every to-do completed since `sinceIso`, newest completion first. */
+export async function loadTodosCompletedSince(
+  email: string,
+  sinceIso: string
+): Promise<Todo[]> {
+  const { data, error } = await supabase
+    .from('todos')
+    .select(TODO_COLUMNS)
+    .eq('csm_email', email)
+    .gte('completed_at', sinceIso)
+    .order('completed_at', { ascending: false })
+  fail('Could not load your completed to-dos', error)
+  return ((data ?? []) as TodoRow[]).map(toTodo)
+}
+
+/**
+ * Account names by org id, read from board_cards rather than from the live book.
+ *
+ * That matters for an export: a touch logged three months ago may belong to an
+ * account since reassigned away, which is gone from PostHog's answer but still has
+ * its row here. Falling back to the raw org id would put a uuid in the document.
+ */
+export async function loadOrgNames(email: string): Promise<Record<string, string>> {
+  const { data, error } = await supabase
+    .from('board_cards')
+    .select('org_id,org_name')
+    .eq('csm_email', email)
+  fail('Could not load account names', error)
+
+  const names: Record<string, string> = {}
+  for (const row of data ?? []) {
+    const orgId = row.org_id as string
+    const orgName = row.org_name as string | null
+    if (orgName) names[orgId] = orgName
+  }
+  return names
+}
+
+// --- To-dos ----------------------------------------------------------------
+
+/*
+ * Every write here is scoped by csm_email as well as by id. updateTouch and
+ * deleteTouch above are the only two writes in this file addressed by bare id;
+ * the other dozen are email-scoped, so the to-do surface follows the majority.
+ * It costs nothing on an indexed column and means an id held over from another
+ * session cannot write.
+ */
+
+const TODO_COLUMNS = 'id,title,note,bucket,position,kind,org_id,completed_at,created_at'
+
+interface TodoRow {
+  id: string
+  title: string
+  note: string | null
+  bucket: string
+  position: number
+  kind: string
+  org_id: string | null
+  completed_at: string | null
+  created_at: string
+}
+
+function toTodo(r: TodoRow): Todo {
+  return {
+    id: r.id,
+    title: r.title,
+    note: r.note ?? null,
+    // Guarded rather than cast: same cost, one fewer `as`, and it keeps the
+    // guard from being a dead export. Skipping an unrecognised row the way
+    // loadCardProps skips a bad colour is not an option — a to-do would
+    // silently disappear.
+    bucket: isTodoBucket(r.bucket) ? r.bucket : 'today',
+    position: r.position,
+    // The fallback is the same rule the backfill migration used, so a row
+    // written by an older build reads back the way the column was seeded.
+    kind: isTodoKind(r.kind) ? r.kind : r.org_id ? 'account' : 'other',
+    orgId: r.org_id ?? null,
+    completedAt: r.completed_at ?? null,
+    createdAt: r.created_at
+  }
+}
+
+/** Open to-dos across all three buckets, position-ordered. */
+export async function loadTodos(email: string): Promise<Todo[]> {
+  const { data, error } = await supabase
+    .from('todos')
+    .select(TODO_COLUMNS)
+    .eq('csm_email', email)
+    .is('completed_at', null)
+    .order('position')
+  fail('Could not load your to-dos', error)
+  return ((data ?? []) as TodoRow[]).map(toTodo)
+}
+
+/**
+ * Today's completions, newest first — both the rail's count and the undo
+ * targets. Rows rather than a bare count: reads return arrays by convention
+ * here, and rows cost the same for a day's worth while also surviving a reload.
+ */
+export async function loadTodosDoneToday(email: string, sinceIso: string): Promise<Todo[]> {
+  const { data, error } = await supabase
+    .from('todos')
+    .select(TODO_COLUMNS)
+    .eq('csm_email', email)
+    .gte('completed_at', sinceIso)
+    .order('completed_at', { ascending: false })
+  fail('Could not load what you finished today', error)
+  return ((data ?? []) as TodoRow[]).map(toTodo)
+}
+
+/**
+ * Recent completions, newest first, regardless of which day they happened on.
+ *
+ * Separate from loadTodosDoneToday, which is scoped to the day because it feeds a
+ * counter. This one feeds the completed list, where the whole point is being able
+ * to find something you finished (or finished by accident) a while ago.
+ */
+export async function loadCompletedTodos(email: string, limit = 100): Promise<Todo[]> {
+  const { data, error } = await supabase
+    .from('todos')
+    .select(TODO_COLUMNS)
+    .eq('csm_email', email)
+    .not('completed_at', 'is', null)
+    .order('completed_at', { ascending: false })
+    .limit(limit)
+  fail('Could not load your completed to-dos', error)
+  return ((data ?? []) as TodoRow[]).map(toTodo)
+}
+
+/**
+ * Appends a to-do to the bottom of its bucket, returning the created row.
+ *
+ * Returning it matters: the id is server-generated, and a to-do inserted
+ * optimistically under a client-invented id is immediately draggable — a drag
+ * resolving before the insert would then move a row that does not exist. One
+ * round trip buys a real id and no reconciliation.
+ */
+export async function addTodo(
+  email: string,
+  values: TodoValues,
+  existing: Todo[]
+): Promise<Todo> {
+  const tail = existing
+    .filter((t) => t.bucket === values.bucket)
+    .reduce((max, t) => Math.max(max, t.position), 0)
+
+  const { data, error } = await supabase
+    .from('todos')
+    .insert({
+      csm_email: email,
+      title: values.title.trim(),
+      note: values.note.trim() || null,
+      bucket: values.bucket,
+      position: tail + POSITION_STEP,
+      kind: values.kind,
+      org_id: values.orgId
+    })
+    .select(TODO_COLUMNS)
+    .single()
+  fail('Could not add the to-do', error)
+  return toTodo(data as unknown as TodoRow)
+}
+
+/**
+ * Rewrites a to-do's editable body. Position travels with it because the form
+ * can change the bucket, and bucket and position are only meaningful together —
+ * written apart they could half-apply.
+ */
+export async function updateTodo(
+  email: string,
+  id: string,
+  values: TodoValues,
+  position: number
+): Promise<void> {
+  const { error } = await supabase
+    .from('todos')
+    .update({
+      title: values.title.trim(),
+      note: values.note.trim() || null,
+      bucket: values.bucket,
+      position,
+      kind: values.kind,
+      org_id: values.orgId,
+      updated_at: new Date().toISOString()
+    })
+    .eq('csm_email', email)
+    .eq('id', id)
+  fail('Could not save the to-do', error)
+}
+
+export async function moveTodo(
+  email: string,
+  id: string,
+  bucket: TodoBucket,
+  position: number
+): Promise<void> {
+  const { error } = await supabase
+    .from('todos')
+    .update({ bucket, position, updated_at: new Date().toISOString() })
+    .eq('csm_email', email)
+    .eq('id', id)
+  fail('Could not move the to-do', error)
+}
+
+/**
+ * Soft-archives a to-do. Bucket and position are deliberately left alone: that
+ * is what makes undo exact, restoring the card to the slot it left with no
+ * arithmetic.
+ */
+export async function completeTodo(
+  email: string,
+  id: string,
+  completedAt: string
+): Promise<void> {
+  const { error } = await supabase
+    .from('todos')
+    .update({ completed_at: completedAt, updated_at: new Date().toISOString() })
+    .eq('csm_email', email)
+    .eq('id', id)
+  fail('Could not complete the to-do', error)
+}
+
+/** Restores a completed to-do to the slot it left. */
+export async function uncompleteTodo(email: string, id: string): Promise<void> {
+  const { error } = await supabase
+    .from('todos')
+    .update({ completed_at: null, updated_at: new Date().toISOString() })
+    .eq('csm_email', email)
+    .eq('id', id)
+  fail('Could not restore the to-do', error)
+}
+
+export async function deleteTodo(email: string, id: string): Promise<void> {
+  const { error } = await supabase
+    .from('todos')
+    .delete()
+    .eq('csm_email', email)
+    .eq('id', id)
+  fail('Could not delete the to-do', error)
 }
 
 export { POSITION_STEP }

@@ -16,6 +16,25 @@ const api = {
   accounts: {
     fetch: (email: string): Promise<Result<AccountsPayload>> =>
       ipcRenderer.invoke('accounts:fetch', email)
+  },
+  files: {
+    /** Resolves to the chosen path, or null if the save dialog was dismissed. */
+    saveText: (fileName: string, contents: string): Promise<Result<string | null>> =>
+      ipcRenderer.invoke('files:saveText', { fileName, contents })
+  },
+  menu: {
+    /**
+     * Fires when the Settings menu item is chosen. Returns its own unsubscribe,
+     * because the renderer must be able to detach on unmount — `removeAllListeners`
+     * would be a footgun the moment a second listener exists.
+     */
+    onOpenSettings: (callback: () => void): (() => void) => {
+      const handler = (): void => callback()
+      ipcRenderer.on('menu:settings', handler)
+      return () => {
+        ipcRenderer.removeListener('menu:settings', handler)
+      }
+    }
   }
 }
 

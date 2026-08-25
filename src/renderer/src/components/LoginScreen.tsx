@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react'
-import { isAllowlisted } from '../lib/board'
-import { Button } from './ui/Button'
-import { Input } from './ui/Input'
+import { registerUser } from '../lib/board'
+import { isTeamEmail, normalizeEmail, TEAM_DOMAIN } from '../lib/team'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Notice } from './ui/Notice'
 import { Spinner } from './ui/Spinner'
 import { AuthShell } from './AuthShell'
@@ -13,17 +14,20 @@ export function LoginScreen({ onSignedIn }: { onSignedIn: (email: string) => voi
 
   async function submit(e: FormEvent) {
     e.preventDefault()
-    const normalized = email.trim().toLowerCase()
+    const normalized = normalizeEmail(email)
     if (!normalized) return
 
     setBusy(true)
     setError(null)
     try {
-      if (await isAllowlisted(normalized)) {
-        onSignedIn(normalized)
-      } else {
-        setError(`${normalized} is not on the allowlist for this board.`)
+      // The domain is the whole gate. Anyone at PostHog gets a board; which
+      // accounts land on it comes from their own assignments, not from here.
+      if (!isTeamEmail(normalized)) {
+        setError(`Sign in with your @${TEAM_DOMAIN} address.`)
+        return
       }
+      await registerUser(normalized)
+      onSignedIn(normalized)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not reach the database.')
     } finally {
