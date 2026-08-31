@@ -1,5 +1,6 @@
 import type { ActivityTouch, Todo } from './board'
 import { BUCKET_LABELS } from './todos'
+import { linkHref } from './touchChannels'
 
 /**
  * Turns a week of activity into a markdown document meant to be pasted into an AI
@@ -49,9 +50,13 @@ function dayKey(iso: string): string {
  * Capitalised in place rather than mapped through channels.ts. `CHANNEL_LABELS`
  * there is for ContactChannel — where an account is reachable: slack, gmail,
  * teams, discord — and this is TouchChannel: how one logged outreach went out,
- * email, call, meeting, slack, other. Only 'slack' appears in both, so mapping
- * through the wrong one silently blanks four of the five. Same distinction the
- * account panel keeps, and the same one the README calls out.
+ * email, call, meeting, slack, link, other. Only 'slack' appears in both, so
+ * mapping through the wrong one silently blanks five of the six. Same
+ * distinction the account panel keeps, and the same one the README calls out.
+ *
+ * `TOUCH_CHANNEL_LABELS` in `touchChannels.ts` is the right map and would work,
+ * but every label in it is the value capitalised, so importing it here would buy
+ * a coupling and nothing else.
  */
 function channelLabel(channel: string): string {
   return channel.charAt(0).toUpperCase() + channel.slice(1)
@@ -134,6 +139,14 @@ export function buildActivityMarkdown(input: ActivityExport): string {
       for (const touch of rows) {
         const replied = touch.replied ? ' · they replied' : ''
         out.push(`- **${day(touch.occurredAt)}** · ${channelLabel(touch.channel)}${replied}`)
+        if (touch.url) {
+          // Angle brackets so every markdown renderer autolinks it, and so a URL
+          // with parentheses or a trailing period cannot swallow them. Falls back
+          // to the raw text when `linkHref` will not vouch for it — the document
+          // should say what was logged either way.
+          const href = linkHref(touch.url)
+          out.push(`  ${href ? `<${href}>` : touch.url.trim()}`)
+        }
         if (touch.note) {
           out.push(quoteNote(touch.note, '  '))
         }

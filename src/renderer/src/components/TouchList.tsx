@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import type { Touch, TouchValues } from '../lib/board'
+import { TOUCH_CHANNEL_LABELS, linkHref } from '../lib/touchChannels'
+import { TouchChannelIcon } from './TouchChannelIcon'
 import { Spinner } from './ui/Spinner'
 import { TouchForm } from './TouchForm'
 
@@ -15,6 +17,49 @@ interface Props {
 const action =
   '-ml-2 text-[var(--color-ink-faint)] opacity-0 transition-opacity ' +
   'group-hover:opacity-100 focus-visible:opacity-100'
+
+/**
+ * The URL of a link touch, on its own line under the channel.
+ *
+ * `target="_blank"` is not cosmetic: the main process turns an attempt to open a
+ * window into `shell.openExternal` (see `setWindowOpenHandler` in `main/index`),
+ * so this is what sends the link to the user's browser. A same-tab href would
+ * instead navigate the renderer itself away from the app, with no way back.
+ *
+ * Shows the text as typed and links the normalised href, so what you read is
+ * what you wrote and what you click is what will open. Text that `linkHref`
+ * won't vouch for still renders — just not as something clickable, which says
+ * more than quietly dropping it would.
+ */
+function TouchLink({ url }: { url: string }) {
+  const href = linkHref(url)
+  const text = url.trim()
+
+  if (!href) {
+    return (
+      <p className="mt-1 truncate text-[12px] text-[var(--color-ink-faint)]" title={text}>
+        {text}
+      </p>
+    )
+  }
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      title={href}
+      className={
+        'mt-1 block truncate text-[12px] text-[var(--color-ink-muted)] underline ' +
+        'decoration-[var(--color-line-strong)] underline-offset-2 transition-colors ' +
+        'hover:text-[var(--color-ink)] hover:decoration-current ' +
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ink)]'
+      }
+    >
+      {text}
+    </a>
+  )
+}
 
 /** Logged outreach, newest first, with each entry editable in place. */
 export function TouchList({ touches, loading, onSave, onDelete }: Props) {
@@ -48,12 +93,16 @@ export function TouchList({ touches, loading, onSave, onDelete }: Props) {
             />
           ) : (
             <>
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="text-[12px] font-semibold capitalize">{t.channel}</span>
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-1.5 text-[12px] font-semibold">
+                  <TouchChannelIcon channel={t.channel} />
+                  <span className="truncate">{TOUCH_CHANNEL_LABELS[t.channel]}</span>
+                </span>
                 <span className="shrink-0 font-mono text-[10px] tabular-nums text-[var(--color-ink-faint)]">
                   {new Date(t.occurredAt).toLocaleDateString()}
                 </span>
               </div>
+              {t.url && <TouchLink url={t.url} />}
               {t.note && (
                 <p className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-[var(--color-ink-muted)]">
                   {t.note}

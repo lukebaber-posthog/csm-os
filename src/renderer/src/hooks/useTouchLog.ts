@@ -7,6 +7,7 @@ import {
   type Touch,
   type TouchValues
 } from '../lib/board'
+import { normalizeTouchValues } from '../lib/touchChannels'
 
 /** Writes resolve to false when they failed, so the form can stay open. */
 interface TouchLog {
@@ -80,12 +81,21 @@ export function useTouchLog(
     [email, onLatestChange, orgId]
   )
 
+  /*
+   * Both writes normalise on the way through rather than trusting the form.
+   * `TouchForm` keeps a typed URL in state across a channel change so flipping
+   * to Call and back does not discard it, which makes stripping it downstream of
+   * the form the only place it can be done once and hold. Same arrangement as
+   * `useTodos` and `normalizeTodoValues`.
+   */
   const add = useCallback(
-    (values: TouchValues) => mutate(() => addTouch(email, orgId, values)),
+    (values: TouchValues) =>
+      mutate(() => addTouch(email, orgId, normalizeTouchValues(values))),
     [email, mutate, orgId]
   )
   const save = useCallback(
-    (id: string, values: TouchValues) => mutate(() => updateTouch(id, values)),
+    (id: string, values: TouchValues) =>
+      mutate(() => updateTouch(id, normalizeTouchValues(values))),
     [mutate]
   )
   const remove = useCallback((id: string) => mutate(() => deleteTouch(id)), [mutate])

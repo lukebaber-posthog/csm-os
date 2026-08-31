@@ -19,6 +19,8 @@ export interface Touch {
   orgId: string
   channel: TouchChannel
   note: string | null
+  /** Only ever set on a 'link' touch — see `normalizeTouchValues`. */
+  url: string | null
   occurredAt: string
 }
 
@@ -26,6 +28,8 @@ export interface Touch {
 export interface TouchValues {
   channel: TouchChannel
   note: string
+  /** Empty on every channel but 'link', where it is the point of the entry. */
+  url: string
   occurredAt: string
 }
 
@@ -430,7 +434,7 @@ export async function loadLastTouches(email: string): Promise<Record<string, str
 export async function loadTouches(email: string, orgId: string): Promise<Touch[]> {
   const { data, error } = await supabase
     .from('touches')
-    .select('id,org_id,channel,note,occurred_at')
+    .select('id,org_id,channel,note,url,occurred_at')
     .eq('csm_email', email)
     .eq('org_id', orgId)
     .order('occurred_at', { ascending: false })
@@ -440,6 +444,7 @@ export async function loadTouches(email: string, orgId: string): Promise<Touch[]
     orgId: r.org_id as string,
     channel: r.channel as TouchChannel,
     note: (r.note as string | null) ?? null,
+    url: (r.url as string | null) ?? null,
     occurredAt: r.occurred_at as string
   }))
 }
@@ -454,6 +459,7 @@ export async function addTouch(
     org_id: orgId,
     channel: values.channel,
     note: values.note.trim() || null,
+    url: values.url.trim() || null,
     occurred_at: values.occurredAt
   })
   fail('Could not log the touch', error)
@@ -466,6 +472,10 @@ export async function updateTouch(id: string, values: TouchValues): Promise<void
     .update({
       channel: values.channel,
       note: values.note.trim() || null,
+      // Written unconditionally, not only when set: re-filing a link touch as a
+      // call has to clear the URL that is already on the row, and a partial
+      // update would leave it there.
+      url: values.url.trim() || null,
       occurred_at: values.occurredAt
     })
     .eq('id', id)
@@ -489,6 +499,7 @@ export interface ActivityTouch {
   orgId: string
   channel: TouchChannel
   note: string | null
+  url: string | null
   occurredAt: string
   replied: boolean
 }
@@ -500,7 +511,7 @@ export async function loadTouchesSince(
 ): Promise<ActivityTouch[]> {
   const { data, error } = await supabase
     .from('touches')
-    .select('id,org_id,channel,note,occurred_at,replied')
+    .select('id,org_id,channel,note,url,occurred_at,replied')
     .eq('csm_email', email)
     .gte('occurred_at', sinceIso)
     .order('occurred_at', { ascending: false })
@@ -510,6 +521,7 @@ export async function loadTouchesSince(
     orgId: r.org_id as string,
     channel: r.channel as TouchChannel,
     note: (r.note as string | null) ?? null,
+    url: (r.url as string | null) ?? null,
     occurredAt: r.occurred_at as string,
     replied: r.replied === true
   }))

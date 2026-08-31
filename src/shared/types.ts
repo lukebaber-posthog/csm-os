@@ -37,5 +37,16 @@ export interface AccountsPayload {
 /** Discriminated result so the renderer never has to parse thrown strings. */
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 
-export const TOUCH_CHANNELS = ['email', 'call', 'meeting', 'slack', 'other'] as const
+/**
+ * How one logged outreach went out. Order is the order of the picker.
+ *
+ * Not to be confused with `ContactChannel` in `renderer/lib/channels`, which is
+ * where an account's contact lives and is one standing choice per account.
+ * Only 'slack' appears in both.
+ *
+ * 'link' is the odd one: the others describe a conversation, that one describes
+ * something you sent — a doc, a dashboard, a recording — so it is the only
+ * channel that carries a URL alongside the note.
+ */
+export const TOUCH_CHANNELS = ['email', 'call', 'meeting', 'slack', 'link', 'other'] as const
 export type TouchChannel = (typeof TOUCH_CHANNELS)[number]

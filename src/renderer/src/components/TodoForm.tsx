@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
 import { motion } from 'motion/react'
 import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -13,6 +13,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import type { Todo, TodoValues } from '../lib/board'
+import { buildAccountIndex, matchAccount } from '../lib/accountMatch'
 import { EASE_SWIFT } from '../lib/motion'
 import {
   BUCKET_LABELS,
@@ -94,13 +95,48 @@ export function TodoForm({
   const [bucket, setBucket] = useState(initial?.bucket ?? defaultBucket ?? DEFAULT_BUCKET)
   const [kind, setKind] = useState(initial?.kind ?? DEFAULT_KIND)
   /*
-   * Kept across a kind change rather than cleared with it, so flipping to PR and
-   * back does not throw away the account you had already picked. `useTodos` drops
-   * the link on the way out for any kind that cannot carry one — see
-   * `normalizeTodoValues`.
+   * The account, in two parts: what the picker was last set to by hand, and
+   * whether that outranks what the text says.
+   *
+   * `picked` is kept across a kind change rather than cleared with it, so flipping
+   * to PR and back does not throw away the account you had already chosen.
+   * `useTodos` drops the link on the way out for any kind that cannot carry one —
+   * see `normalizeTodoValues`.
    */
-  const [orgId, setOrgId] = useState(initial?.orgId ?? null)
+  const [picked, setPicked] = useState(initial?.orgId ?? null)
+  /*
+   * Whether `picked` outranks what the text says. Until the picker is touched the
+   * link follows the words — see the matcher below. A to-do that already carries a
+   * link opens pinned: reopening one to fix a typo should not re-file it. One that
+   * does not is fair game, which is how a to-do written before any of this existed
+   * gets its account the first time it is edited.
+   */
+  const [pinned, setPinned] = useState(Boolean(initial?.orgId))
   const [saving, setSaving] = useState(false)
+
+  /*
+   * "Look into Exception Spike for Athena Intelligence" already names its account,
+   * so the picker fills itself in rather than asking you to say it a second time.
+   * It tracks the text both ways — delete the name and the link clears — which is
+   * what makes it safe to do without asking: nothing here is a decision you cannot
+   * see in the trigger and undo by typing.
+   *
+   * The index is rebuilt only when the book changes and a match is a few hundred
+   * string comparisons over one to-do's worth of text, so this is cheap enough to
+   * run on every keystroke.
+   */
+  const index = useMemo(() => buildAccountIndex(accounts), [accounts])
+  const auto = useMemo(
+    () => (pinned ? null : matchAccount(index, `${title}\n${note}`)),
+    [pinned, index, title, note]
+  )
+  const orgId = pinned ? picked : (auto?.orgId ?? null)
+
+  /** Any use of the picker pins it, including choosing "No account yet". */
+  function chooseAccount(value: string) {
+    setPinned(true)
+    setPicked(value === NO_ACCOUNT ? null : value)
+  }
 
   // Set when the to-do points at an account that is no longer in the book.
   const orphanOrgId = orgId && !accounts.some((a) => a.orgId === orgId) ? orgId : null
@@ -112,7 +148,10 @@ export function TodoForm({
     const ok = await onSubmit({ title, note, bucket, kind, orgId })
     setSaving(false)
     // Clearing the body but keeping the account makes adding a second to-do for
-    // the same account cheap. When editing, the parent closes the form.
+    // the same account cheap — `picked` survives the reset, so an account you
+    // chose by hand is still there for the next one. An account the text supplied
+    // leaves with the text it came from, which is the point of it: the next to-do
+    // names its own. When editing, the parent closes the form.
     if (ok && !initial) {
       setTitle('')
       setNote('')
@@ -209,10 +248,7 @@ export function TodoForm({
               transition={{ duration: 0.18, ease: EASE_SWIFT }}
               className="min-w-0 flex-1"
             >
-              <Select
-                value={orgId ?? NO_ACCOUNT}
-                onValueChange={(v) => setOrgId(v === NO_ACCOUNT ? null : v)}
-              >
+              <Select value={orgId ?? NO_ACCOUNT} onValueChange={chooseAccount}>
                 <SelectTrigger className={cn('w-full min-w-0', FIELD)}>
                   {/* A placeholder matters here: Radix shows the selected label only
                       via the matching item, so a value with no item renders a
@@ -255,6 +291,16 @@ export function TodoForm({
                   ))}
                 </SelectContent>
               </Select>
+
+              {/*
+                A picker that fills itself in is silent to a screen reader, which
+                would otherwise not find out until submit. Keyed off the match
+                rather than the keystroke: React leaves the text node alone while
+                the matched account is unchanged, so it announces once.
+              */}
+              <span aria-live="polite" className="sr-only">
+                {auto ? `Linked to ${auto.orgName}` : ''}
+              </span>
             </motion.div>
           )}
         </div>

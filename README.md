@@ -209,9 +209,21 @@ it while you drag near an edge.
 - Click anywhere else on a card to open its panel: exact ARR, segment,
   assignment date, the channel pill at a size that carries a label, and the
   outreach log. Log a touch with a channel, date, and optional note, and
-  **Edit** or **Delete** anything already logged — editing opens the same three
-  fields in place. Changing or deleting a touch recomputes days-since-contact,
-  so the card counter follows the edit.
+  **Edit** or **Delete** anything already logged — editing opens the same fields
+  in place. Changing or deleting a touch recomputes days-since-contact, so the
+  card counter follows the edit.
+
+  The channels are **Email, Call, Meeting, Slack, Link, and Other**, each with
+  its own mark in the picker: the real Gmail and Slack logos for the two that
+  name a product, and monochrome glyphs for the four that name an act rather
+  than a service.
+
+  **Link** is the one that behaves differently. It records something you *sent*
+  — a doc, a dashboard, a recording — so choosing it reveals a URL field above
+  the note, and it is the only channel where a field is required. The entry then
+  shows the URL under the channel as a hyperlink that opens in your browser, with
+  the note beneath it. You can leave the scheme off: `posthog.com/docs` is stored
+  as typed and linked as `https://posthog.com/docs`.
 - Each card shows ARR and days since last contact. A **filled** dot means stale
   (nothing logged, or more than 30 days); a **hollow** dot means recent.
 - New accounts appearing in PostHog land at the bottom of the leftmost column of
@@ -417,16 +429,21 @@ src/
     cache.ts             On-device account cache
   preload/index.ts       The only surface the renderer gets
   renderer/src/
-    assets/channels/     Vendored Slack / Gmail / Teams / Discord marks (SOURCES.md)
+    assets/channels/     Vendored Slack / Gmail / Teams / Discord marks
+                         (SOURCES.md). Shared by the contact pill and the
+                         outreach picker, not copied per use.
     lib/                 supabase client, all board queries, team (who may sign
-                         in), logos (logo.dev URLs), layouts, colours, channels,
-                         formatters, cn(), segmented (the shared pill recipe)
+                         in), logos (logo.dev URLs), accountMatch (name → account
+                         for the to-do composer), layouts, colours, channels
+                         (where a contact lives), touchChannels (how one outreach
+                         went out, plus linkHref), formatters, cn(), segmented
+                         (the shared pill recipe)
     hooks/               useBoard (board state machine), useTodos (the to-do
                          board), useTouchLog (one account's outreach log),
                          useTheme, useOutsideDismiss (click-away to close)
     components/          Board, Column, AccountCard, CardColorToolbar,
                          ChannelSlider, LayoutPicker, AccountDrawer, TouchForm,
-                         TouchList, TopBar
+                         TouchList, TouchChannelIcon, TopBar
       ui/                shadcn primitives (button, input, select, textarea,
                          toggle, toggle-group) plus hand-rolled Notice, Spinner
       icons/             GithubMark — inline so it can take currentColor
@@ -468,6 +485,26 @@ reads as the same control. Only the account kind carries an account, so the pick
 appears under the pill for that one and is gone for the other two — a PR is not "an
 account to-do with the account left blank", which is what the old "No account"
 option really meant.
+
+**Typing an account's name links it.** "Look into the exception spike for Contoso
+Freight" already says which account it is about, so the picker fills itself in
+rather than making you say it twice. The link tracks the words both ways — delete
+the name and it clears again — until you use the picker yourself, at which point
+your choice sticks and nothing you type moves it. A to-do reopened for editing
+keeps the account it was saved with, so fixing a typo cannot silently re-file it.
+
+The lookup table is built from your own book, in `lib/accountMatch.ts`, and it is
+fussier than a substring search in both directions at once. Case, accents and
+punctuation are thrown away on both sides, so "US Mobile", "us-mobile" and
+"USMobile" are one thing and adjacent words are tried joined together; but a
+match still has to start and end on a word boundary, so an account called Glow
+does not light up on "glowing". Beyond the full name it indexes two guesses — the
+name with a generic tail dropped ("Contoso Bot" → "Contoso") and a leading word
+long and distinctive enough to stand alone — and throws away any guess that lands
+on two accounts, or on some other account's real name. Names only, never domains:
+a company's registered domain is often a product name that means something else
+entirely, and indexing an ordinary word like that would file half a week's notes
+under one account.
 
 Switching kinds keeps whatever account you had already chosen, so flipping to PR
 and back does not lose it; the link is dropped on the way to Supabase instead
@@ -577,9 +614,12 @@ had deliberately left where it was.
   pill therefore does *not* drag the card, which is the intent: it is a control,
   not a handle.
 - Two things are called a channel and they are not the same. `touches.channel`
-  is how one logged outreach went out (email, call, meeting…); many per account.
-  `board_cards.contact_channel` is where the contact lives (Slack, Gmail, Teams,
-  Discord); one per account, nullable. `TouchChannel` vs `ContactChannel` in code.
+  is how one logged outreach went out (email, call, meeting, slack, link, other);
+  many per account. `board_cards.contact_channel` is where the contact lives
+  (Slack, Gmail, Teams, Discord); one per account, nullable. `TouchChannel` vs
+  `ContactChannel` in code, and `lib/touchChannels.ts` vs `lib/channels.ts` —
+  two files rather than one precisely because only `slack` appears in both, so a
+  merged map half-works and blanks the rest in silence.
 - The channel pill sits on its own row rather than inline beside the contact
   age. Inline, it left roughly 50px for the age at the column widths the board
   actually uses, which turned "No contact logged" into "No c…".
@@ -631,6 +671,41 @@ had deliberately left where it was.
   account's log and hands the recomputed most-recent date back to the board via
   `setLastTouch`, because an edit can change *which* touch is newest and a
   delete can leave none — neither is derivable from the row that changed.
+- `touches.url` is nullable and carries no CHECK tying it to `channel`, exactly
+  like `todos.org_id` and `todos.kind`. The pairing is enforced by
+  `normalizeTouchValues`, applied in `useTouchLog` rather than in `TouchForm` —
+  the form deliberately keeps a typed URL in state across a channel change so
+  flipping to Call and back does not discard it, which is *why* the stripping has
+  to live downstream of it. `updateTouch` writes `url` unconditionally rather
+  than only when set, or re-filing a link touch as a call would leave the old URL
+  on the row.
+- `linkHref` in `lib/touchChannels.ts` is the whole boundary between typed text
+  and an `href` in a renderer running at the app's own origin, so it refuses
+  anything that is not http(s) — a `javascript:` URL pasted into that field would
+  otherwise execute there. It also supplies a missing scheme, which is not
+  cosmetic: a bare `posthog.com/docs` in an `href` is a *relative* path, and the
+  window would navigate itself to a file that does not exist. Order matters —
+  anything that parses as a URL is judged on its protocol and never retried,
+  because retrying is how `mailto:a@b.com` becomes a perfectly valid
+  `https://mailto:a@b.com`. The known cost is that `localhost:3000` parses with a
+  `localhost:` protocol and so is refused.
+- The link in a history entry is `target="_blank"`, and that is load-bearing
+  rather than habit: the main process turns an attempt to open a window into
+  `shell.openExternal` (`setWindowOpenHandler` in `main/index.ts`), so the target
+  is what sends the URL to the browser. A same-tab href would navigate the
+  renderer off the app with no way back.
+- `TouchChannelIcon` mixes two kinds of mark on purpose. Email and Slack name a
+  product and get that product's own full-colour logo, reusing the files in
+  `assets/channels/` rather than a second copy. Call, Meeting, Link and Other
+  name an act, not a service, so they are `currentColor` lucide glyphs — drawing
+  Call in some invented brand colour would imply a vendor that is not there.
+  Both render into a fixed square box whatever their aspect ratio, so labels line
+  up down the dropdown.
+- The lucide glyphs in that component carry `size-[15px]` and `text-current`, and
+  both prefixes are load-bearing inside a Select: shadcn's `SelectItem` and
+  `SelectTrigger` restyle any descendant `svg` whose class contains neither
+  `size-` nor `text-`, which would resize them to 16px and repaint them
+  `muted-foreground`.
 
 - To-do columns are a CHECK-constrained `bucket` on the row, not rows in
   `board_stages`. That table exists to be *edited* — it carries the 10-column
@@ -645,6 +720,20 @@ had deliberately left where it was.
   `useTodos`, not in the form, so it covers the optimistic patch and the write at
   once. The form deliberately keeps `orgId` in local state across a kind change,
   which is *why* the normalisation has to live downstream of it.
+- `lib/accountMatch.ts` is pure in both directions — accounts in, index out;
+  index and text in, match out — so what it does can be exercised without
+  rendering a composer. Two of its rules are load-bearing and easy to "simplify"
+  wrongly. Full names are indexed unconditionally while a derived alias has to
+  clear a length check and a stopword list, because a name is the user's ground
+  truth and an alias is the index's own guess. And an alias claimed by two
+  accounts is dropped rather than awarded to whichever was seen first: `TodoFace`
+  renders the account chip off `org_id`, so a wrong link is one customer's logo
+  sitting on another customer's card.
+- The composer holds the account as `picked` plus `pinned` rather than one
+  `orgId`, and the value it submits is derived from the pair. Collapsing them
+  back into one state variable is what breaks the feature: without `pinned` there
+  is no way to tell an account you chose from one the text supplied, so either
+  typing overwrites your choice or your choice freezes the matcher out.
 - `toTodo` falls back to `org_id ? 'account' : 'other'` for a row with no
   recognised `kind`. That is deliberately the same rule the backfill migration
   used, so a row written by an older build reads back the way the column was
@@ -917,10 +1006,17 @@ had deliberately left where it was.
 - `touches.channel` is capitalised in place rather than mapped through
   `CHANNEL_LABELS` in `lib/channels.ts`. That map is for `ContactChannel` — where an
   account is reachable (slack, gmail, teams, discord) — and this is `TouchChannel` —
-  how one outreach went out (email, call, meeting, slack, other). Only `slack`
-  appears in both, so mapping through the wrong one silently blanks four of the
-  five. This is the same collision the account panel keeps apart, and it is easy to
-  get wrong precisely because one value does resolve.
+  how one outreach went out (email, call, meeting, slack, link, other). Only `slack`
+  appears in both, so mapping through the wrong one silently blanks five of the
+  six. This is the same collision the account panel keeps apart, and it is easy to
+  get wrong precisely because one value does resolve. `TOUCH_CHANNEL_LABELS` in
+  `lib/touchChannels.ts` *is* the right map, but every label in it is the value
+  capitalised, so importing it here would buy a coupling and nothing else.
+- A link touch contributes a second line, the URL in angle brackets so every
+  renderer autolinks it and a trailing `)` or `.` cannot be swallowed into the
+  link text. It is `linkHref`'s normalised output, not the raw field, and text
+  that `linkHref` refuses is emitted verbatim instead — the document should say
+  what was logged either way.
 - PostgREST returns timestamptz with a **full** offset (`2026-08-21T16:37:28.79+00:00`)
   and trims trailing zeros from the fraction. `new Date()` parses that; it does
   **not** parse a two-digit offset like `+00`, which yields `Invalid Date` and
