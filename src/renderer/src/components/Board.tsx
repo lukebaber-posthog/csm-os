@@ -10,6 +10,7 @@ import {
   useSensor,
   useSensors,
   type CollisionDetection,
+  type DragCancelEvent,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent
@@ -167,9 +168,9 @@ export function Board({
     const wasColumn = e.active.data.current?.type === 'column'
     const overId = e.over ? String(e.over.id) : null
     reset()
-    if (!overId) return
 
     if (wasColumn) {
+      if (!overId) return
       const from = String(e.active.id).slice(COLUMN_PREFIX.length)
       if (!overId.startsWith(COLUMN_PREFIX)) return
       const to = overId.slice(COLUMN_PREFIX.length)
@@ -184,6 +185,19 @@ export function Board({
     }
 
     const orgId = String(e.active.id)
+
+    /*
+     * The landing is unconditional; only the write below is not.
+     *
+     * The card comes back into the DOM at full width whatever the drop decided,
+     * so it always has an expansion to play — including the very common gesture
+     * of picking a card up and putting it back where it came from. Landing used
+     * to sit after the "nothing to do" guard, which meant that gesture skipped
+     * the animation entirely and the card popped open instead.
+     */
+    land(orgId)
+
+    if (!overId) return
     const target = stageOf(overId)
     if (!target) return
 
@@ -196,12 +210,16 @@ export function Board({
 
     const current = columns.find((c) => c.cards.some((card) => card.account.orgId === orgId))
     const currentIndex = current?.cards.findIndex((c) => c.account.orgId === orgId) ?? -1
-    // Nothing to do when the card was dropped exactly where it started.
+    // Nothing to persist when the card was dropped exactly where it started.
     if (current?.stage.key === target.stage.key && currentIndex === index) return
 
-    // Marks the card so it widens back out into its new slot on arrival.
-    land(orgId)
     onMove(orgId, target.stage.key, index)
+  }
+
+  /** Escape mid-drag puts the card back, which is a landing like any other. */
+  function handleDragCancel(e: DragCancelEvent) {
+    if (e.active.data.current?.type !== 'column') land(String(e.active.id))
+    reset()
   }
 
   return (
@@ -211,7 +229,7 @@ export function Board({
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
-      onDragCancel={reset}
+      onDragCancel={handleDragCancel}
     >
       <div ref={scrollRef} className="flex h-full gap-3 overflow-x-auto px-5 pb-6">
         <SortableContext items={columnIds} strategy={horizontalListSortingStrategy}>

@@ -1,6 +1,6 @@
 import type { ActivityTouch, Todo } from './board'
 import { BUCKET_LABELS } from './todos'
-import { linkHref } from './touchChannels'
+import { linkHref } from './links'
 
 /**
  * Turns a week of activity into a markdown document meant to be pasted into an AI

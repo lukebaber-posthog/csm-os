@@ -9,6 +9,7 @@ import { cardSurfaceStyle, type CardColor } from '../lib/colors'
 import type { Todo, TodoValues } from '../lib/board'
 import { useOutsideDismiss } from '../hooks/useOutsideDismiss'
 import { AccountChip } from './AccountChip'
+import { ExternalLink } from './ExternalLink'
 import { GithubMark } from './icons/GithubMark'
 import { TodoForm } from './TodoForm'
 
@@ -92,6 +93,15 @@ export function TodoFace({
         <span className="line-clamp-3 text-[13px] font-semibold leading-snug tracking-tight">
           {todo.title}
         </span>
+
+        {/*
+          Under the title, above the note — the link is what the to-do points at,
+          the note is commentary on it. Safe to render in every copy of the face:
+          the drag overlay unmounts on drop, and the completion effects layer is
+          `aria-hidden` and `pointer-events-none`, so a shard's anchor is inert
+          and out of the accessibility tree.
+        */}
+        {todo.url && <ExternalLink url={todo.url} className="text-[11px] leading-snug" />}
 
         {todo.note && (
           <p className="line-clamp-3 whitespace-pre-wrap text-[11px] leading-snug text-[var(--color-ink-faint)]">
@@ -207,7 +217,9 @@ export function TodoCard({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.24, ease: EASE_SWIFT }}
     >
-      <div ref={scope}>
+      {/* mx-auto so the landing widen opens out from the centre rather than
+          unfurling rightwards from the column's left edge. */}
+      <div ref={scope} className="mx-auto">
       <div
         ref={(node) => {
           setNodeRef(node)

@@ -99,7 +99,13 @@ export function CompletionUndo({ top, onUndo, onDismiss, reduced }: Props) {
           onPointerLeave={() => setPaused(false)}
           onFocus={() => setPaused(true)}
           onBlur={() => setPaused(false)}
-          className="fixed bottom-5 right-5 z-[65] flex items-center gap-3 rounded-lg border border-[var(--color-line-strong)] bg-[var(--color-raised)] px-3 py-2 shadow-[var(--card-shadow-lift)]"
+          /*
+            Clears the completion bar rather than covering it. The bar is 60px at
+            rest plus the board's 24px bottom padding, and the toast only ever
+            appears after a drop — when the bar has already shrunk back — so it is
+            the resting height that has to be cleared, not the armed one.
+          */
+          className="fixed bottom-24 right-5 z-[65] flex items-center gap-3 rounded-lg border border-[var(--color-line-strong)] bg-[var(--color-raised)] px-3 py-2 shadow-[var(--card-shadow-lift)]"
         >
           <span className="max-w-[220px] truncate text-[12px] text-[var(--color-ink)]">
             {top.runLength > 1 ? `${top.runLength} to-dos completed` : `Completed ${top.title}`}

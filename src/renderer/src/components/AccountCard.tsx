@@ -130,7 +130,9 @@ export function AccountCard({ card, onOpen, onSetColor, onSetChannel, landed }: 
 
   return (
     <>
-      <div ref={scope}>
+      {/* mx-auto so the landing widen opens out from the centre rather than
+          unfurling rightwards from the column's left edge. */}
+      <div ref={scope} className="mx-auto">
         <div
           ref={setNodeRef}
           style={{ transform: CSS.Translate.toString(transform), transition }}

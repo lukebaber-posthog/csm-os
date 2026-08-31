@@ -436,14 +436,14 @@ src/
                          in), logos (logo.dev URLs), accountMatch (name → account
                          for the to-do composer), layouts, colours, channels
                          (where a contact lives), touchChannels (how one outreach
-                         went out, plus linkHref), formatters, cn(), segmented
-                         (the shared pill recipe)
+                         went out), links (linkHref — typed text to a safe href),
+                         formatters, cn(), segmented (the shared pill recipe)
     hooks/               useBoard (board state machine), useTodos (the to-do
                          board), useTouchLog (one account's outreach log),
                          useTheme, useOutsideDismiss (click-away to close)
     components/          Board, Column, AccountCard, CardColorToolbar,
                          ChannelSlider, LayoutPicker, AccountDrawer, TouchForm,
-                         TouchList, TouchChannelIcon, TopBar
+                         TouchList, TouchChannelIcon, ExternalLink, TopBar
       ui/                shadcn primitives (button, input, select, textarea,
                          toggle, toggle-group) plus hand-rolled Notice, Spinner
       icons/             GithubMark — inline so it can take currentColor
@@ -458,7 +458,7 @@ there is no CORS layer to fight.
 ## To-dos
 
 A second board, reached by the sliding pill in the header. Three fixed columns —
-This Month, This Week, Today — plus a completion rail on the right.
+This Month, This Week, Today — plus a completion bar across the bottom.
 
 **Creating one is the `+` beside a column's label, or a right-click anywhere in
 the column.** There is no add panel and no column picker: where you click *is* the
@@ -468,10 +468,17 @@ the completion rail is a different component, so "not on Done" needs no special
 case. Right-clicking a card or the open composer leaves the native menu alone, so
 cut/copy/paste still works inside the fields.
 
-The composer asks for a title first and only a title. **The note is a link with a
-`+` on it** until you want one: most to-dos are a single line, and an always-open
-textarea made the composer look like a form to fill in rather than a box to type
-in. Editing a to-do that already has a note opens with it showing.
+The composer asks for a title first and only a title. **The note and the link are
+buttons with a `+` on them** until you want one: most to-dos are a single line, and
+always-open fields made the composer look like a form to fill in rather than a box
+to type in. Each button disappears once its field is open, and editing a to-do that
+already has a note or a link opens with them showing.
+
+**A to-do can carry a link** — the pull request it is about, the dashboard to
+check, the doc to read. Once saved it shows on the card as a hyperlink that opens
+in your browser, and clicking it neither opens the card's editor nor starts a
+drag. You can leave the scheme off: `posthog.com/docs` is stored as typed and
+linked as `https://posthog.com/docs`.
 
 **There is no Cancel button.** Clicking away closes the composer, and Escape does
 the same from either text field. Choosing an account does *not* count as clicking
@@ -542,20 +549,24 @@ it on, a completion sets off five seconds of confetti across the whole window �
 side cannons angled inward plus a jet from a random point along the bottom —
 instead of a single eruption.
 
-The rail doubles in width the moment a card is picked up, so where it can go is
-obvious without a legend.
+The bar carries a dashed outline at rest, and **triples in height** the moment a
+card is picked up (60px to 180px), so where it can go is obvious without a legend.
+The columns above give up the height; it never overlays them.
 
-**Completing one is a drop on the rail.** Every completion sets off a two-cannon
+**Completing one is a drop on the bar.** Every completion sets off a two-cannon
 rainbow confetti eruption from the bottom centre of the window — a tight jet
 inside a wide fan — and
 the card itself comes apart with a different effect each time — shattering into
-shards, evaporating, imploding into the rail, or being stamped and filed. The
-rail glows green while a card is held over it: the one place the board leaves its
+shards, evaporating, imploding into the bar, or being stamped and filed. The
+bar glows green while a card is held over it: the one place the board leaves its
 monochrome palette, because "let go now" should read without having to look.
 
-Urgency increases left to right, the reverse of the accounts board's
-progression. That is deliberate: it puts the nearest deadline nearest the rail,
-which is where a finished card is headed.
+Urgency increases left to right, the reverse of the accounts board's progression.
+That ordering predates the move to a bottom bar, when the completion target was a
+right-hand lane and "nearest deadline nearest the rail" was the whole argument for
+it. Every column now abuts the bar equally, so the left-to-right order is no
+longer doing that work — it is kept because reading a week left to right is worth
+having on its own, not because the layout still demands it.
 
 **Buckets do not roll over.** Nothing demotes a leftover "Today" item overnight,
 and there is no job to do it. That is a decision, not an oversight — the
@@ -681,7 +692,7 @@ had deliberately left where it was.
   to live downstream of it. `updateTouch` writes `url` unconditionally rather
   than only when set, or re-filing a link touch as a call would leave the old URL
   on the row.
-- `linkHref` in `lib/touchChannels.ts` is the whole boundary between typed text
+- `linkHref` in `lib/links.ts` is the whole boundary between typed text
   and an `href` in a renderer running at the app's own origin, so it refuses
   anything that is not http(s) — a `javascript:` URL pasted into that field would
   otherwise execute there. It also supplies a missing scheme, which is not
@@ -691,11 +702,24 @@ had deliberately left where it was.
   because retrying is how `mailto:a@b.com` becomes a perfectly valid
   `https://mailto:a@b.com`. The known cost is that `localhost:3000` parses with a
   `localhost:` protocol and so is refused.
-- The link in a history entry is `target="_blank"`, and that is load-bearing
-  rather than habit: the main process turns an attempt to open a window into
-  `shell.openExternal` (`setWindowOpenHandler` in `main/index.ts`), so the target
-  is what sends the URL to the browser. A same-tab href would navigate the
-  renderer off the app with no way back.
+- The link in a history entry and the one on a to-do card are the same component
+  (`ExternalLink`), because "what is safe to open, and what does the user see"
+  must not be able to differ between two places that both hold a pasted URL.
+- `target="_blank"` on it is load-bearing rather than habit: the main process
+  turns an attempt to open a window into `shell.openExternal`
+  (`setWindowOpenHandler` in `main/index.ts`), so the target is what sends the URL
+  to the browser. A same-tab href would navigate the renderer off the app with no
+  way back.
+- `ExternalLink` stops both `pointerdown` and `click`. A to-do card is itself a
+  click target that opens the editor, sitting on a drag sensor armed by
+  pointerdown, so without them the link would open the editor instead of the page
+  and a press-and-drag from it would take the card. Redundant in the outreach
+  panel, and kept anyway so the component is safe wherever it lands.
+- A to-do's link renders inside `TodoFace`, which is also cloned into the drag
+  overlay and the completion effects' shards. That is safe without a special case:
+  the overlay unmounts on drop, and `CompletionFxLayer` is `aria-hidden` and
+  `pointer-events-none`, so a shard's anchor is inert and out of the accessibility
+  tree.
 - `TouchChannelIcon` mixes two kinds of mark on purpose. Email and Slack name a
   product and get that product's own full-colour logo, reusing the files in
   `assets/channels/` rather than a second copy. Call, Meeting, Link and Other
@@ -748,25 +772,30 @@ had deliberately left where it was.
   That helper anchors at local *midday* so a date-only entry cannot drift across
   a timezone edge — correct for a logged touch, and wrong for a count window,
   where it silently drops everything completed before lunch.
-- The completion rail participates in collision detection **by pointer only**,
-  and is filtered out of the geometric fallback. It abuts the last column, and
-  geometric detection resolves against the dragged card's rectangle rather than
-  the cursor, so without this a card released over "Today" while merely
-  overlapping the rail would be completed. The cost is that the rail is
-  unreachable by keyboard drag, which is why every card carries a "Done" button.
-- The rail **doubles in width** while a card is in flight (176px to 352px), which
-  is the signal that it is a target. That is only safe because `TodoBoard` sets
+- The completion bar participates in collision detection **by pointer only**, and
+  is filtered out of the geometric fallback. It runs the full width directly under
+  all three columns, and geometric detection resolves against the dragged card's
+  rectangle rather than the cursor, so without this a card released low in any
+  column while merely overlapping the bar would be completed. This matters *more*
+  as a bottom strip than it did as a right-hand lane: every column now has an edge
+  against it, not just the last one. The cost is that the bar is unreachable by
+  keyboard drag, which is why every card carries a "Done" button.
+- The bar **triples in height** while a card is in flight (60px to 180px), which
+  is the signal that it is a target. Its dashed outline is visible at rest too —
+  the border is what says there is a target at all, so it is never transparent;
+  arming steps it from the muted line to the strong one and fills the surface. That is only safe because `TodoBoard` sets
   `measuring={{ droppable: { strategy: MeasuringStrategy.Always, frequency: 50 } }}`.
-  dnd-kit's default measures droppables **once** at drag start, so growing the rail
-  afterwards would leave every cached rect stale: the rail would accept drops where
-  it used to be and ignore the half of itself that just appeared, and the three
-  columns beside it reflow too (409px to 351px), so their lane rects go stale in
-  the same moment. Those two changes go together — do not revert one without the
-  other. Verified both directions: a drop in the strip that was column space at
-  rest and is rail only after expansion **completes**, and a drop 20px inside
-  Today's right edge with the rail expanded still **moves**.
-  The rail grows **in flow**, never as an overlay, so it cannot sit on top of the
-  last column and steal drops meant for it.
+  dnd-kit's default measures droppables **once** at drag start, so growing the bar
+  afterwards would leave every cached rect stale: the bar would accept drops where
+  it used to be and ignore the strip of itself that just appeared, and the three
+  columns above it shorten too, so their lane rects go stale in the same moment.
+  Those two changes go together — do not revert one without the other.
+  The bar grows **in flow**, never as an overlay, so it cannot sit on top of the
+  columns and steal drops meant for them.
+- The columns row carries `min-h-0`. A flex child defaults to `min-height: auto`
+  and refuses to shrink below its content, so without it the bar's growth would
+  push the columns off the bottom of the window instead of taking height from them
+  — and the lanes would scroll rather than resize.
 - `TodoBoard` suppresses `DragOverlay`'s `dropAnimation` from `onDragOver`, never
   from `onDragEnd`. dnd-kit starts the drop animation in the same commit that
   clears `activeId`, so a flag written in `onDragEnd` races the thing it is meant
@@ -810,11 +839,17 @@ had deliberately left where it was.
   budget, or push an undo entry.
 - The confetti erupts from **bottom centre**, not from the completed card. Firing
   from the card seems more obviously right and is worse: a card is always released
-  over the completion rail, hard against the right edge, so most of the burst threw
-  itself off screen and the rest was crammed into the corner. Measured at bottom
-  centre: launch x is 50% of the window, the arc reaches 10% from the top, and 0%
-  of particles leave either edge. The card still comes apart at its own rect —
-  only the confetti moved.
+  over the completion target, which used to be a lane hard against the right edge,
+  so most of the burst threw itself off screen and the rest was crammed into the
+  corner. Measured at bottom centre: launch x is 50% of the window, the arc reaches
+  10% from the top, and 0% of particles leave either edge. The card still comes
+  apart at its own rect — only the confetti moved. Now that the target is a bottom
+  bar the two happen to agree, but the burst is still anchored to the window rather
+  than to the drop, and should stay that way — it is what keeps the arc on screen.
+- The undo toast sits at `bottom-24`, not `bottom-5`, so it clears the completion
+  bar rather than covering its "Done" control. It is the bar's **resting** 60px
+  that has to be cleared, not the armed 96px: the toast only ever appears after a
+  drop, by which point the bar has already shrunk back.
 - `particleColors()` fires all seven card hues at once, and it must stay that way.
   An earlier version used the completed card's own hue plus two greys read from
   the theme, on the reasoning that a burst should match the app's monochrome. That
@@ -965,6 +1000,16 @@ had deliberately left where it was.
   survives mouseup (measured: ~180ms, sliding home) but re-rendering it wider has
   no effect on what is on screen, so the widen has to be played by the *placed*
   card instead.
+- The landing is **two beats**: hold at half width for the drop animation's own
+  duration, then expand. Both beats used to start together, so the card widened
+  underneath the still-flying overlay and was already near full width by the time
+  the overlay unmounted — the expansion was never visible and the card read as
+  popping open. `HOLD_MS` is taken from `DROP_ANIM` so the two cannot drift.
+- The hold is a repeated keyframe (`['50%', '50%', '100%']` with `times`), not a
+  `delay`. A delay would leave the card at its natural full width for the wait and
+  then snap to half before expanding — a flash, not a fix. Note this relies on
+  motion applying a single `ease` **per keyframe segment**; raw WAAPI instead
+  applies its `easing` across the whole animation, which would eat into the hold.
 - That widen is `useAnimate` on its own wrapper div, not an `initial` and not a
   state-driven `animate`. A card reordered inside its own column is never
   unmounted, so `initial` would not re-run; and a declarative `animate` would have
@@ -974,6 +1019,28 @@ had deliberately left where it was.
   `transform`.
 - Width, not `scaleX`. Scaling squashes the text horizontally; narrowing lets it
   rewrap and stay readable.
+- The widen's wrapper carries `mx-auto`, and it is not decoration. A block element
+  animated from 50% to 100% width grows from its **left edge**, so without it the
+  landing card clings to the left of the column and unfurls rightwards. Auto
+  margins keep it centred so it opens out both ways at once. Deliberately margins
+  rather than a transform: a transform would also make the wrapper a containing
+  block for anything positioned inside the card. Measured mid-animation, the gaps
+  on either side stay equal (150/150 at half width, 18/18 near the end).
+- `release()` sends the overlay's x to **`width / 4`, not 0**, so it lands centred
+  in the slot. dnd-kit flies the overlay home to the source node's rect, which is
+  the card's *full* width, while the overlay inside it is half that — so x = 0 put
+  it against the slot's left edge while the placed card underneath was centred by
+  its auto margins, and the card appeared to hop sideways the moment the overlay
+  unmounted. Verified the two coincide to the pixel: on a 599px slot both the
+  centred card and the landed overlay occupy 808→1108.
+- The landing width is written by hand in a **layout** effect before `animate()`
+  is called. The card is placed at its natural full width in the same commit that
+  sets `landed`; a `useEffect` runs after paint and motion schedules its first
+  keyframe a frame later again, so the card painted full width and then snapped to
+  half — which read as it flashing out to the left before the animation started.
+  Three things had to be true together for this animation to look right: land the
+  overlay centred, centre the card with auto margins, and set the width before the
+  first paint. Any one of them missing brings back a visible jump.
 - The centring offset is computed against the *halved* width (`rect.width / 4`, not
   `/ 2`), because what has to end up under the cursor is what the card becomes, not
   what it was.

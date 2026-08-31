@@ -10,6 +10,7 @@ import {
   useSensor,
   useSensors,
   type CollisionDetection,
+  type DragCancelEvent,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent
@@ -31,12 +32,11 @@ import { DragCardOverlay } from './DragCardOverlay'
 /**
  * Droppables are re-measured throughout the drag, not once at the start.
  *
- * The completion rail doubles in width while a card is in flight, which also
- * reflows the three columns beside it. dnd-kit's default is to measure droppables
- * once when dragging begins, so every one of those rects would be stale for the
- * rest of the drag: the rail would accept drops where it *used* to be and ignore
- * the half of itself that just appeared. Four droppables on a 50ms throttle is
- * nothing.
+ * The completion bar grows taller while a card is in flight, which also shortens
+ * the three columns above it. dnd-kit's default is to measure droppables once when
+ * dragging begins, so every one of those rects would be stale for the rest of the
+ * drag: the bar would accept drops where it *used* to be and ignore the strip of
+ * itself that just appeared. Four droppables on a 50ms throttle is nothing.
  */
 const measuring = {
   droppable: { strategy: MeasuringStrategy.Always, frequency: 50 }
@@ -45,12 +45,14 @@ const measuring = {
 /**
  * Only cards drag on this board, so unlike `Board.tsx` there is no drag *type* to
  * scope collisions by. The work here is the opposite one: keeping the completion
- * rail from stealing drops meant for the last column.
+ * bar from stealing drops meant for the columns.
  *
- * The rail abuts "Today", so a card dragged near that column's right edge
- * overlaps the rail's rectangle — and geometric detection resolves against the
- * dragged card's box, not the cursor. So the rail participates by pointer only,
- * and is filtered out of the keyboard fallback entirely.
+ * The bar runs the full width directly under all three columns, so a card dragged
+ * anywhere near the bottom of any of them overlaps its rectangle — and geometric
+ * detection resolves against the dragged card's box, not the cursor. So the bar
+ * participates by pointer only, and is filtered out of the keyboard fallback
+ * entirely. Note this matters *more* as a bottom strip than it did as a
+ * right-hand lane: every column now has an edge against it, not just the last.
  *
  * Deliberately a second function rather than `Board.tsx`'s with a mode flag: the
  * rules genuinely differ, and in particular nothing here should copy that one's
@@ -222,10 +224,12 @@ export function TodoBoard({
     const rect = e.active.rect.current.translated ?? e.active.rect.current.initial
     const overRect = e.over?.rect ?? null
     reset()
-    if (!overId) return
 
     // The completion branch must come before the bucket lookup, or it falls
-    // through the `if (!target) return` guard below and nothing happens.
+    // through the `if (!target) return` guard below and nothing happens. It also
+    // comes before `land()`: completion takes the card off the board entirely, so
+    // the effects layer owns the animation and landing a card that is about to
+    // unmount would fight it.
     if (overId === DONE_ID) {
       const todo = allTodos.find((t) => t.id === id)
       if (!todo) return
@@ -242,6 +246,18 @@ export function TodoBoard({
       return
     }
 
+    /*
+     * The landing is unconditional; only the write below is not.
+     *
+     * The card comes back into a column at full width whatever the drop decided,
+     * so it always has an expansion to play — including the very common gesture
+     * of picking a card up and putting it back where it came from. Landing used
+     * to sit after the "nothing to do" guard, which meant that gesture skipped
+     * the animation entirely and the card popped open instead.
+     */
+    land(id)
+
+    if (!overId) return
     const target = bucketOf(overId)
     if (!target) return
 
@@ -257,12 +273,16 @@ export function TodoBoard({
 
     const current = columns.find((c) => c.todos.some((t) => t.id === id))
     const currentIndex = current?.todos.findIndex((t) => t.id === id) ?? -1
-    // Nothing to do when the card was dropped exactly where it started.
+    // Nothing to persist when the card was dropped exactly where it started.
     if (current?.bucket === target.bucket && currentIndex === index) return
 
-    // Marks the card so it widens back out into its new slot on arrival.
-    land(id)
     void onMove(id, target.bucket, index)
+  }
+
+  /** Escape mid-drag puts the card back, which is a landing like any other. */
+  function handleDragCancel(e: DragCancelEvent) {
+    land(String(e.active.id))
+    reset()
   }
 
   const top = undoStack[undoStack.length - 1]
@@ -289,15 +309,22 @@ export function TodoBoard({
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
-      onDragCancel={reset}
+      onDragCancel={handleDragCancel}
     >
       {/*
-        No horizontal scroll: three columns plus an 88px rail always fit. That
-        removes two whole classes of drag bug at a stroke — dnd-kit auto-scrolling
-        the container mid-drag so coordinates computed earlier go stale, and an
-        element's rect landing outside the window entirely.
+        No horizontal scroll: three columns always fit. That removes two whole
+        classes of drag bug at a stroke — dnd-kit auto-scrolling the container
+        mid-drag so coordinates computed earlier go stale, and an element's rect
+        landing outside the window entirely.
+
+        A column now, not a row: the columns share a row across the top and the
+        completion bar is a full-width strip beneath them. `min-h-0` on that row is
+        load-bearing — a flex child defaults to `min-height: auto`, which would
+        refuse to shrink, so the bar's growth would push the columns off the bottom
+        of the window instead of taking height from them.
       */}
-      <div className="flex h-full gap-3 overflow-hidden px-5 pb-6">
+      <div className="flex h-full flex-col gap-3 overflow-hidden px-5 pb-6">
+        <div className="flex min-h-0 flex-1 gap-3">
         {columns.map((column) => (
           <TodoColumn
             key={column.bucket}
@@ -328,6 +355,7 @@ export function TodoBoard({
             isActiveTarget={activeId !== null && targetBucket === column.bucket}
           />
         ))}
+        </div>
 
         <CompleteZone
           containerRef={railRef}

@@ -55,12 +55,17 @@ interface Props {
 }
 
 /**
- * The completion rail: a narrowed lane at the right-hand end of the board.
+ * The completion bar: a full-width strip along the bottom of the board.
  *
  * Borrows the columns' own drop-target vocabulary — a dashed border going from
  * transparent to visible — so it reads as part of the board's system rather than
  * as a fourth column. Restraint comes for free that way, which matters: the
- * effects are the payoff, and the rail should not compete with them.
+ * effects are the payoff, and the bar should not compete with them.
+ *
+ * It was a narrow lane down the right-hand side. As a bottom strip every column
+ * abuts it equally, so a card no longer has to be carried across the board to be
+ * finished — and the drop target is the full width of the throw rather than a
+ * 176px lane.
  */
 export function CompleteZone({
   count,
@@ -94,90 +99,60 @@ export function CompleteZone({
 
   return (
     /*
-     * Doubles while a card is in flight, to say "this is a target" without
+     * Grows taller while a card is in flight, to say "this is a target" without
      * needing a legend. That is only safe because TodoBoard measures droppables
      * with MeasuringStrategy.Always: dnd-kit otherwise caches every droppable rect
-     * at drag start, and a rail that grew afterwards would leave the cached rect
-     * behind — you would be pointing at the wide rail and dnd-kit would still be
-     * matching the narrow one, which looks exactly like a collision-detection bug
+     * at drag start, and a bar that grew afterwards would leave the cached rect
+     * behind — you would be pointing at the tall bar and dnd-kit would still be
+     * matching the short one, which looks exactly like a collision-detection bug
      * and is not one. Growing in flow rather than overlaying, so it can never sit
-     * on top of the last column and steal drops meant for it.
+     * on top of the columns and steal drops meant for them; the columns above
+     * give up the height instead.
      */
     <div
       ref={containerRef}
       className={cn(
-        'flex h-full shrink-0 flex-col transition-[width] duration-200 ease-swift',
-        armed || hot ? 'w-[352px]' : 'w-[176px]'
+        'flex w-full shrink-0 flex-col transition-[height] duration-200 ease-swift',
+        armed || hot ? 'h-[180px]' : 'h-[60px]'
       )}
     >
-      <header className="mb-2.5 flex items-center justify-between gap-1 px-1">
-        <button
-          type="button"
-          onClick={onOpenCompleted}
-          title="See everything you have completed, and put any of it back"
-          className="rounded text-[12px] font-semibold uppercase tracking-wider text-[var(--color-ink-faint)] transition-colors hover:text-[var(--color-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ink)]"
-        >
-          Done
-        </button>
-        {/*
-          Fixed box plus overflow-hidden masks the slide, and tabular-nums keeps
-          9 -> 10 from shifting the header. aria-live is off because the undo
-          toast is already a live region — announcing both says it twice.
-        */}
-        <span
-          aria-live="off"
-          title={`${count} completed today`}
-          className="relative block h-4 w-5 overflow-hidden font-mono text-[11px] tabular-nums text-[var(--color-ink-faint)]"
-        >
-          {/* initial={false} so the count on first paint doesn't slide in from
-              below every time the board mounts. */}
-          <AnimatePresence initial={false}>
-            <motion.span
-              key={count}
-              initial={{ y: reduced ? 0 : 12, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: reduced ? 0 : -12, opacity: 0 }}
-              transition={{ duration: 0.18, ease: EASE_SWIFT }}
-              className="absolute inset-0 block text-right"
-            >
-              {count}
-            </motion.span>
-          </AnimatePresence>
-        </span>
-      </header>
-
       {/*
-        Only colours change between rest, armed and hot — never the box, and the
-        swallow scales the glyph rather than this node. dnd-kit measures droppables
-        at drag start, so a rail that resized or transformed when armed would leave
-        `over.rect` stale and move the target out from under the cursor mid-aim,
-        which looks exactly like a collision-detection bug and is not one. That
-        also rules out the tempting "the zone expands to invite the drop".
+        Only colours change between rest, armed and hot — never the box's own
+        geometry, and the swallow scales the glyph rather than this node. The
+        height change belongs to the wrapper above, which dnd-kit re-measures;
+        a transform here would leave `over.rect` stale and move the target out
+        from under the cursor mid-aim.
       */}
       <div
         ref={setNodeRef}
         // The glow is a box-shadow, not a ring or an outline that changes the box.
         style={hot ? hotStyle : undefined}
         className={cn(
-          'flex flex-1 flex-col items-center justify-center gap-1.5 rounded-lg border',
+          'relative flex flex-1 items-center justify-center gap-2.5 rounded-lg border',
           'transition-[border-color,background-color,color,box-shadow] duration-200 ease-swift',
+          // Dashed at every state, and never transparent: at rest the outline is
+          // what says there is somewhere to drop things, which an invisible border
+          // left to the check glyph alone. Rest uses the muted line and armed the
+          // strong one, so arming is a step up rather than an appearance.
           hot
             ? 'border-solid'
             : armed
               ? 'border-dashed border-[var(--color-line-strong)] bg-[var(--color-surface)] text-[var(--color-ink-muted)]'
-              : 'border-dashed border-transparent text-[var(--color-ink-faint)]'
+              : 'border-dashed border-[var(--color-line)] text-[var(--color-ink-faint)]'
         )}
       >
-        <div ref={scope} className="flex flex-col items-center justify-center gap-1.5">
+        {/* Laid out in a row, not stacked: a wide short bar has the width to put
+            the glyph and its label side by side, and stacking them in 60px would
+            crowd both. */}
+        <div ref={scope} className="flex items-center gap-2.5">
           <Check
             aria-hidden
             className={cn(
-              'h-6 w-6 transition-transform duration-150 ease-swift',
+              'h-5 w-5 transition-transform duration-150 ease-swift',
               hot && 'scale-[1.12]'
             )}
           />
-          {/* The wider rail has room to say what it does, which the 88px one did
-              not. Only shown once a card is in flight, so at rest it stays quiet. */}
+          {/* Only shown once a card is in flight, so at rest the bar stays quiet. */}
           <span
             className={cn(
               'text-[11px] font-medium transition-opacity duration-200 ease-swift',
@@ -185,6 +160,48 @@ export function CompleteZone({
             )}
           >
             {hot ? 'Release to complete' : 'Drop to complete'}
+          </span>
+        </div>
+
+        {/*
+          The completed-list control, parked at the right end rather than in a
+          header of its own. A bar this short cannot afford a header line above it,
+          and absolute keeps it out of the centring above — the glyph stays centred
+          on the bar, not on the space left over beside this.
+        */}
+        <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
+          <button
+            type="button"
+            onClick={onOpenCompleted}
+            title="See everything you have completed, and put any of it back"
+            className="rounded text-[12px] font-semibold uppercase tracking-wider text-[var(--color-ink-faint)] transition-colors hover:text-[var(--color-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ink)]"
+          >
+            Done
+          </button>
+          {/*
+            Fixed box plus overflow-hidden masks the slide, and tabular-nums keeps
+            9 -> 10 from shifting the row. aria-live is off because the undo
+            toast is already a live region — announcing both says it twice.
+          */}
+          <span
+            aria-live="off"
+            title={`${count} completed today`}
+            className="relative block h-4 w-5 overflow-hidden font-mono text-[11px] tabular-nums text-[var(--color-ink-faint)]"
+          >
+            {/* initial={false} so the count on first paint doesn't slide in from
+                below every time the board mounts. */}
+            <AnimatePresence initial={false}>
+              <motion.span
+                key={count}
+                initial={{ y: reduced ? 0 : 12, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: reduced ? 0 : -12, opacity: 0 }}
+                transition={{ duration: 0.18, ease: EASE_SWIFT }}
+                className="absolute inset-0 block text-right"
+              >
+                {count}
+              </motion.span>
+            </AnimatePresence>
           </span>
         </div>
       </div>

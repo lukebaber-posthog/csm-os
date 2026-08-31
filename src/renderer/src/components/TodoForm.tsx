@@ -1,6 +1,6 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { motion } from 'motion/react'
-import { Plus } from 'lucide-react'
+import { Link2, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -39,6 +39,12 @@ const NO_ACCOUNT = '__none__'
  * without drawing a box around each one.
  */
 const FIELD = 'border-[var(--color-line)] shadow-field dark:shadow-field-dark'
+
+/** The two "add an optional field" buttons under the title. */
+const reveal =
+  'inline-flex items-center gap-1 rounded px-1 py-0.5 text-[11px] font-medium ' +
+  'text-[var(--color-ink-faint)] transition-colors hover:text-[var(--color-ink-muted)] ' +
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ink)]'
 
 interface Props {
   /** Present when editing an existing to-do; absent when creating one. */
@@ -92,6 +98,9 @@ export function TodoForm({
   const [note, setNote] = useState(initial?.note ?? '')
   /** A to-do that already has a note opens with it showing; there is nothing to reveal. */
   const [noteOpen, setNoteOpen] = useState(Boolean(initial?.note))
+  const [url, setUrl] = useState(initial?.url ?? '')
+  /** Same rule as the note: an existing link opens showing, not hidden behind a button. */
+  const [linkOpen, setLinkOpen] = useState(Boolean(initial?.url))
   const [bucket, setBucket] = useState(initial?.bucket ?? defaultBucket ?? DEFAULT_BUCKET)
   const [kind, setKind] = useState(initial?.kind ?? DEFAULT_KIND)
   /*
@@ -145,7 +154,7 @@ export function TodoForm({
     e.preventDefault()
     if (!title.trim()) return
     setSaving(true)
-    const ok = await onSubmit({ title, note, bucket, kind, orgId })
+    const ok = await onSubmit({ title, note, url, bucket, kind, orgId })
     setSaving(false)
     // Clearing the body but keeping the account makes adding a second to-do for
     // the same account cheap — `picked` survives the reset, so an account you
@@ -156,6 +165,8 @@ export function TodoForm({
       setTitle('')
       setNote('')
       setNoteOpen(false)
+      setUrl('')
+      setLinkOpen(false)
     }
   }
 
@@ -181,7 +192,7 @@ export function TodoForm({
         className={FIELD}
       />
 
-      {noteOpen ? (
+      {noteOpen && (
         <Textarea
           value={note}
           onChange={(e) => setNote(e.target.value)}
@@ -194,19 +205,46 @@ export function TodoForm({
           placeholder="Note"
           className={cn('mt-2 resize-none', FIELD)}
         />
-      ) : (
-        <button
-          type="button"
-          onClick={() => setNoteOpen(true)}
-          className={
-            'mt-1.5 inline-flex items-center gap-1 rounded px-1 py-0.5 text-[11px] font-medium ' +
-            'text-[var(--color-ink-faint)] transition-colors hover:text-[var(--color-ink-muted)] ' +
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ink)]'
-          }
-        >
-          <Plus className="h-3 w-3" />
-          Note
-        </button>
+      )}
+
+      {linkOpen && (
+        <Input
+          // Not type="url", which would reject "posthog.com/docs" in the
+          // browser's own words before `linkHref` gets to supply the scheme.
+          type="text"
+          inputMode="url"
+          autoComplete="off"
+          spellCheck={false}
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          onKeyDown={dismissOnEscape}
+          autoFocus={!initial?.url}
+          placeholder="https://…"
+          aria-label="Link"
+          className={cn('mt-2', FIELD)}
+        />
+      )}
+
+      {/*
+        One row for whichever reveals are still closed, so adding a second
+        optional field did not mean a second lonely button on its own line. Each
+        disappears once opened — the field it reveals is the thing to look at.
+      */}
+      {(!noteOpen || !linkOpen) && (
+        <div className="mt-1.5 flex items-center gap-1">
+          {!noteOpen && (
+            <button type="button" onClick={() => setNoteOpen(true)} className={reveal}>
+              <Plus className="h-3 w-3" />
+              Note
+            </button>
+          )}
+          {!linkOpen && (
+            <button type="button" onClick={() => setLinkOpen(true)} className={reveal}>
+              <Link2 className="h-3 w-3" />
+              Link
+            </button>
+          )}
+        </div>
       )}
 
       <KindSlider value={kind} onChange={setKind} className="mt-2" />

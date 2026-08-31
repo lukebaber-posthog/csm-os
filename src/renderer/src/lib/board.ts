@@ -37,6 +37,8 @@ export interface Todo {
   id: string
   title: string
   note: string | null
+  /** An optional link the to-do is about. Null when none was given. */
+  url: string | null
   bucket: TodoBucket
   position: number
   /** What it is about: an account, a pull request, or your own work. */
@@ -56,6 +58,9 @@ export interface Todo {
 export interface TodoValues {
   title: string
   note: string
+  /** Empty when no link was given. Meaningful for every kind — a PR to-do's
+   *  link is the pull request, an account's might be a dashboard. */
+  url: string
   bucket: TodoBucket
   kind: TodoKind
   orgId: string | null
@@ -575,12 +580,14 @@ export async function loadOrgNames(email: string): Promise<Record<string, string
  * session cannot write.
  */
 
-const TODO_COLUMNS = 'id,title,note,bucket,position,kind,org_id,completed_at,created_at'
+const TODO_COLUMNS =
+  'id,title,note,url,bucket,position,kind,org_id,completed_at,created_at'
 
 interface TodoRow {
   id: string
   title: string
   note: string | null
+  url: string | null
   bucket: string
   position: number
   kind: string
@@ -594,6 +601,7 @@ function toTodo(r: TodoRow): Todo {
     id: r.id,
     title: r.title,
     note: r.note ?? null,
+    url: r.url ?? null,
     // Guarded rather than cast: same cost, one fewer `as`, and it keeps the
     // guard from being a dead export. Skipping an unrecognised row the way
     // loadCardProps skips a bad colour is not an option — a to-do would
@@ -679,6 +687,7 @@ export async function addTodo(
       csm_email: email,
       title: values.title.trim(),
       note: values.note.trim() || null,
+      url: values.url.trim() || null,
       bucket: values.bucket,
       position: tail + POSITION_STEP,
       kind: values.kind,
@@ -706,6 +715,10 @@ export async function updateTodo(
     .update({
       title: values.title.trim(),
       note: values.note.trim() || null,
+      // Written unconditionally, not only when set: clearing the link on an
+      // existing to-do has to clear the column, and a partial update would
+      // leave the old URL on the row.
+      url: values.url.trim() || null,
       bucket: values.bucket,
       position,
       kind: values.kind,
