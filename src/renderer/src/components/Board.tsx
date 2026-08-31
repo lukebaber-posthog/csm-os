@@ -21,12 +21,14 @@ import {
   sortableKeyboardCoordinates
 } from '@dnd-kit/sortable'
 import type { Column as ColumnModel } from '../hooks/useBoard'
+import { useCardDrag } from '../hooks/useCardDrag'
 import type { CardColor } from '../lib/colors'
 import type { ContactChannel } from '../lib/channels'
 import { DROP_ANIM } from '../lib/motion'
 import { Column, COLUMN_PREFIX, STAGE_PREFIX } from './Column'
 import { CardFace } from './AccountCard'
 import { AddColumn } from './AddColumn'
+import { DragCardOverlay } from './DragCardOverlay'
 
 interface Props {
   columns: ColumnModel[]
@@ -84,6 +86,9 @@ export function Board({
   const [activeType, setActiveType] = useState<'card' | 'column' | null>(null)
   const [targetStage, setTargetStage] = useState<string | null>(null)
 
+  // The pickup-and-land feel, shared with the to-do board. See `useCardDrag`.
+  const { pickup, landedId, grab, release, land } = useCardDrag()
+
   // Past roughly six columns the board scrolls horizontally, which would leave
   // a newly added column (and the Add button) off-screen. Follow the addition.
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -140,11 +145,16 @@ export function Board({
     setActiveId(null)
     setActiveType(null)
     setTargetStage(null)
+    release()
   }
 
   function handleDragStart(e: DragStartEvent) {
+    const isColumn = e.active.data.current?.type === 'column'
     setActiveId(String(e.active.id))
-    setActiveType(e.active.data.current?.type === 'column' ? 'column' : 'card')
+    setActiveType(isColumn ? 'column' : 'card')
+    // Cards only. A column drags by its header and keeps its own overlay, which
+    // is a label chip rather than a copy of the column.
+    if (!isColumn) grab(e)
   }
 
   function handleDragOver(e: DragOverEvent) {
@@ -189,6 +199,8 @@ export function Board({
     // Nothing to do when the card was dropped exactly where it started.
     if (current?.stage.key === target.stage.key && currentIndex === index) return
 
+    // Marks the card so it widens back out into its new slot on arrival.
+    land(orgId)
     onMove(orgId, target.stage.key, index)
   }
 
@@ -213,6 +225,7 @@ export function Board({
               onRename={onRename}
               onDelete={onDeleteColumn}
               canDelete={canDeleteColumn}
+              landedId={landedId}
               isActiveTarget={activeType === 'card' && targetStage === column.stage.key}
             />
           ))}
@@ -223,9 +236,9 @@ export function Board({
 
       <DragOverlay dropAnimation={DROP_ANIM}>
         {activeCard && (
-          <div className="dragging-card w-[212px] rotate-1 cursor-grabbing">
+          <DragCardOverlay pickup={pickup}>
             <CardFace card={activeCard} dragging />
-          </div>
+          </DragCardOverlay>
         )}
         {activeColumn && (
           <div className="dragging-card w-[212px] cursor-grabbing rounded-lg border border-[var(--color-ink)] bg-[var(--color-raised)] px-3 py-2.5 shadow-[var(--card-shadow-lift)]">

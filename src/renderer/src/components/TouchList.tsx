@@ -78,7 +78,16 @@ export function TouchList({ touches, loading, onSave, onDelete }: Props) {
   return (
     <ol className="space-y-3">
       {touches.map((t) => (
-        <li key={t.id} className="group border-l-2 border-[var(--color-line-strong)] pl-3">
+        <li
+          key={t.id}
+          /* A card rather than a rule down the left: the same recipe the to-do
+             composer uses (muted line, card shadow, `--color-raised`), so an
+             entry here sits on the panel the way a card sits on a column. */
+          className={
+            'group rounded-lg border border-[var(--color-line)] bg-[var(--color-raised)] ' +
+            'p-3 shadow-[var(--card-shadow)]'
+          }
+        >
           {editingId === t.id ? (
             <TouchForm
               initial={t}

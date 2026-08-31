@@ -23,6 +23,8 @@ interface Props {
   onRename: (stageKey: string, label: string) => void
   onDelete: (stageKey: string) => void
   canDelete: boolean
+  /** The card just dropped, which widens back out into its slot. */
+  landedId: string | null
   /** Highlights the column while a card hovers over it. */
   isActiveTarget: boolean
 }
@@ -35,6 +37,7 @@ export function Column({
   onRename,
   onDelete,
   canDelete,
+  landedId,
   isActiveTarget
 }: Props) {
   // Two roles: the column is a droppable lane for cards, and a sortable item
@@ -180,6 +183,7 @@ export function Column({
               onOpen={onOpenAccount}
               onSetColor={onSetColor}
               onSetChannel={onSetChannel}
+              landed={landedId === card.account.orgId}
             />
           ))}
         </SortableContext>

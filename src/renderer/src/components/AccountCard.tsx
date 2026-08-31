@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { Card } from '../hooks/useBoard'
+import { useLandingWiden } from '../hooks/useCardDrag'
 import { STALE_AFTER_DAYS } from '../lib/layouts'
 import { cardSurfaceStyle, type CardColor } from '../lib/colors'
 import type { ContactChannel } from '../lib/channels'
@@ -16,6 +17,8 @@ interface Props {
   onOpen: (orgId: string) => void
   onSetColor: (orgId: string, color: CardColor | null) => void
   onSetChannel: (orgId: string, channel: ContactChannel | null) => void
+  /** True for the moment after this card is dropped, so it widens into its slot. */
+  landed: boolean
 }
 
 /** Presentational card body, shared by the sortable card and the drag overlay. */
@@ -112,7 +115,7 @@ export function CardFace({
   )
 }
 
-export function AccountCard({ card, onOpen, onSetColor, onSetChannel }: Props) {
+export function AccountCard({ card, onOpen, onSetColor, onSetChannel, landed }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: card.account.orgId,
     // Lets the board tell a card drag apart from a column drag.
@@ -120,33 +123,44 @@ export function AccountCard({ card, onOpen, onSetColor, onSetChannel }: Props) {
   })
   const [anchor, setAnchor] = useState<DOMRect | null>(null)
 
+  // The landing half of the shared pickup effect; the to-do board's cards use the
+  // same hook. The scope has to sit on a wrapper OUTSIDE the sortable node —
+  // dnd-kit writes its drag transform to that node's own inline style.
+  const scope = useLandingWiden(landed)
+
   return (
     <>
-      <div
-        ref={setNodeRef}
-        style={{ transform: CSS.Translate.toString(transform), transition }}
-        // cursor-pointer sits here rather than on CardFace so it doesn't fight
-        // the drag overlay's cursor-grabbing. The original slot stays in place
-        // but goes blank while the overlay drags.
-        className={cn('cursor-pointer', isDragging && 'opacity-0')}
-        {...attributes}
-        {...listeners}
-        role="button"
-        tabIndex={0}
-        onClick={() => onOpen(card.account.orgId)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault()
-            onOpen(card.account.orgId)
-          }
-        }}
-        aria-label={`${card.account.orgName}, ${contactAge(card.lastTouchedAt)}`}
-      >
-        <CardFace
-          card={card}
-          onChipClick={(rect) => setAnchor((open) => (open ? null : rect))}
-          onSetChannel={(channel) => onSetChannel(card.account.orgId, channel)}
-        />
+      <div ref={scope}>
+        <div
+          ref={setNodeRef}
+          style={{ transform: CSS.Translate.toString(transform), transition }}
+          // The board measures this at drag start to work out where the pointer
+          // grabbed the card. Same attribute name on both boards, because
+          // `useCardDrag` does the measuring for both.
+          data-drag-id={card.account.orgId}
+          // cursor-pointer sits here rather than on CardFace so it doesn't fight
+          // the drag overlay's cursor-grabbing. The original slot stays in place
+          // but goes blank while the overlay drags.
+          className={cn('cursor-pointer', isDragging && 'opacity-0')}
+          {...attributes}
+          {...listeners}
+          role="button"
+          tabIndex={0}
+          onClick={() => onOpen(card.account.orgId)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              onOpen(card.account.orgId)
+            }
+          }}
+          aria-label={`${card.account.orgName}, ${contactAge(card.lastTouchedAt)}`}
+        >
+          <CardFace
+            card={card}
+            onChipClick={(rect) => setAnchor((open) => (open ? null : rect))}
+            onSetChannel={(channel) => onSetChannel(card.account.orgId, channel)}
+          />
+        </div>
       </div>
 
       {anchor && (

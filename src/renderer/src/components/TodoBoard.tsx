@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -15,8 +15,9 @@ import {
   type DragStartEvent
 } from '@dnd-kit/core'
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
-import { motion, useReducedMotion } from 'motion/react'
+import { useReducedMotion } from 'motion/react'
 import type { Todo, TodoValues } from '../lib/board'
+import { useCardDrag } from '../hooks/useCardDrag'
 import { DROP_ANIM } from '../lib/motion'
 import { playCompletionFx, type FxRect } from '../lib/completionFx'
 import type { TodoBucket } from '../lib/todos'
@@ -25,6 +26,7 @@ import { TodoColumn, BUCKET_PREFIX } from './TodoColumn'
 import { TodoFace, type TodoAccount } from './TodoCard'
 import { CompleteZone, DONE_ID, type AcceptSignal } from './CompleteZone'
 import { CompletionUndo } from './CompletionUndo'
+import { DragCardOverlay } from './DragCardOverlay'
 
 /**
  * Droppables are re-measured throughout the drag, not once at the start.
@@ -99,29 +101,13 @@ export function TodoBoard({
   const [activeId, setActiveId] = useState<string | null>(null)
   const [targetBucket, setTargetBucket] = useState<TodoBucket | null>(null)
   const [overDone, setOverDone] = useState(false)
-  /**
-   * The source card's size, and how far the overlay must move to sit centred on
-   * the cursor from wherever it was grabbed.
-   *
-   * `width` is the card's full width; the overlay animates to half of it, so the
-   * offset is computed against the *halved* width — the thing being centred is what
-   * the card becomes, not what it was.
-   */
-  const [pickup, setPickup] = useState({ x: 0, y: 0, width: 0, height: 0 })
-  /** Cleared shortly after a drop; only drives the widen-into-slot animation. */
-  const [landedId, setLandedId] = useState<string | null>(null)
-  const landTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // The pickup-and-land feel, shared with the accounts board. See `useCardDrag`.
+  const { pickup, landedId, grab, release, land } = useCardDrag()
   const [editingId, setEditingId] = useState<string | null>(null)
   // One composer at a time, identified by the column it belongs to.
   const [composingBucket, setComposingBucket] = useState<TodoBucket | null>(null)
   const [accept, setAccept] = useState<AcceptSignal | null>(null)
   const [undoStack, setUndoStack] = useState<{ id: string; title: string }[]>([])
-
-  useEffect(() => {
-    return () => {
-      if (landTimer.current !== null) clearTimeout(landTimer.current)
-    }
-  }, [])
 
   const acceptSeq = useRef(0)
   const railRef = useRef<HTMLDivElement>(null)
@@ -161,9 +147,7 @@ export function TodoBoard({
     setActiveId(null)
     setTargetBucket(null)
     setOverDone(false)
-    // Back to the card's own footprint, so a dropped overlay widens back out and
-    // lands square with its slot rather than thin and offset.
-    setPickup((p) => ({ ...p, x: 0, y: 0 }))
+    release()
   }
 
   /**
@@ -218,38 +202,7 @@ export function TodoBoard({
 
   function handleDragStart(e: DragStartEvent) {
     setActiveId(String(e.active.id))
-
-    /*
-     * dnd-kit lines the overlay's top-left up with the source card's top-left and
-     * then applies the drag delta, so by default the cursor sits wherever it
-     * happened to grab. To centre the card on the cursor instead, shift it by the
-     * grab point measured from the card's own centre.
-     *
-     * The activator event is the pointerdown that armed the drag — five pixels of
-     * movement earlier — which is exactly "where you grabbed it".
-     *
-     * The rect is read straight from the DOM rather than from
-     * `active.rect.current.initial`, which is still null this early: dnd-kit
-     * populates it after onDragStart, so using it silently left the offset at zero
-     * and the card never moved off dnd-kit's default alignment.
-     */
-    const activator = e.activatorEvent as Partial<PointerEvent> | undefined
-    const node = document.querySelector(`[data-todo-id="${CSS.escape(String(e.active.id))}"]`)
-    const rect = node?.getBoundingClientRect()
-    if (!rect) return
-
-    if (typeof activator?.clientX === 'number' && typeof activator?.clientY === 'number') {
-      setPickup({
-        // Halved width, so a quarter of the full width is its new half-extent.
-        x: activator.clientX - rect.left - rect.width / 4,
-        y: activator.clientY - rect.top - rect.height / 2,
-        width: rect.width,
-        height: rect.height
-      })
-    } else {
-      // Keyboard drags have no pointer to centre on; leave the card where it is.
-      setPickup({ x: 0, y: 0, width: rect.width, height: rect.height })
-    }
+    grab(e)
   }
 
   function handleDragOver(e: DragOverEvent) {
@@ -308,10 +261,7 @@ export function TodoBoard({
     if (current?.bucket === target.bucket && currentIndex === index) return
 
     // Marks the card so it widens back out into its new slot on arrival.
-    setLandedId(id)
-    if (landTimer.current !== null) clearTimeout(landTimer.current)
-    landTimer.current = setTimeout(() => setLandedId(null), 400)
-
+    land(id)
     void onMove(id, target.bucket, index)
   }
 
@@ -393,34 +343,11 @@ export function TodoBoard({
 
       <DragOverlay dropAnimation={overDone ? null : DROP_ANIM}>
         {activeTodo && (
-          /*
-           * No fixed width class. dnd-kit sizes the overlay wrapper to the card's
-           * own measured rect, and the child animates within it: full width at the
-           * moment of pickup, then half, so the card visibly thins as you lift it
-           * and widens back out into its column when you let go.
-           *
-           * Width rather than scaleX, deliberately — scaling would squash the text
-           * horizontally, where narrowing lets it rewrap and still read.
-           *
-           * motion drives it so picking a card up is a glide rather than a jump.
-           * Note this composes rather than conflicts: dnd-kit writes the drag
-           * translation to its own wrapper element and this transform sits on a
-           * child, so the two never fight over one element's `transform`.
-           */
-          <motion.div
-            initial={{ x: 0, y: 0, rotate: 0, width: pickup.width || undefined }}
-            animate={{
-              x: pickup.x,
-              y: pickup.y,
-              // Squaring up as it nears the rail foreshadows the swallow.
-              rotate: overDone ? 0 : 1,
-              width: pickup.width ? pickup.width / 2 : undefined
-            }}
-            transition={{ type: 'spring', stiffness: 520, damping: 42, mass: 0.6 }}
-            className="dragging-card cursor-grabbing"
-          >
+          // `squareUp` while over the rail: straightening out foreshadows the
+          // swallow. The accounts board has no rail and never sets it.
+          <DragCardOverlay pickup={pickup} squareUp={overDone}>
             <TodoFace todo={activeTodo} account={accountOf(activeTodo.orgId)} dragging />
-          </motion.div>
+          </DragCardOverlay>
         )}
       </DragOverlay>
 

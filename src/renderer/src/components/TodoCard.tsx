@@ -1,9 +1,10 @@
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { motion, useAnimate } from 'motion/react'
+import { motion } from 'motion/react'
 import { cn } from '@/lib/utils'
 import { EASE_SWIFT } from '../lib/motion'
+import { useLandingWiden } from '../hooks/useCardDrag'
 import { cardSurfaceStyle, type CardColor } from '../lib/colors'
 import type { Todo, TodoValues } from '../lib/board'
 import { useOutsideDismiss } from '../hooks/useOutsideDismiss'
@@ -149,24 +150,9 @@ export function TodoCard({
   const editor = useRef<HTMLDivElement>(null)
   useOutsideDismiss(editor, editing, () => onEdit(null))
 
-  /*
-   * The other half of the pickup effect: the overlay thins to half width while in
-   * flight, so on landing the card widens back out into its column.
-   *
-   * It has to happen here rather than on the overlay, because dnd-kit caches the
-   * overlay's rendered node for the drop animation — re-rendering it wider has no
-   * effect on what is on screen.
-   *
-   * Imperative rather than declarative: a card dragged within its own column is
-   * never unmounted, so an `initial` would not re-run, and a state-driven `animate`
-   * would have to pass through the half-width value on the way in. useAnimate just
-   * plays it, the same shape as the completion rail's accept pulse.
-   */
-  const [scope, animate] = useAnimate()
-  useEffect(() => {
-    if (!landed || !scope.current) return
-    void animate(scope.current, { width: ['50%', '100%'] }, { duration: 0.28, ease: EASE_SWIFT })
-  }, [landed, animate, scope])
+  // The landing half of the shared pickup effect; the accounts board's cards use
+  // the same hook. See `hooks/useCardDrag`.
+  const scope = useLandingWiden(landed)
 
   /*
    * While editing, the form replaces the sortable wrapper rather than rendering
@@ -232,8 +218,9 @@ export function TodoCard({
         // clicks that started here.
         data-todo-card
         // The board measures this at drag start to work out where the pointer
-        // grabbed the card.
-        data-todo-id={todo.id}
+        // grabbed the card. `data-drag-id` rather than a per-board name, because
+        // `useCardDrag`'s measurement is shared with the accounts board.
+        data-drag-id={todo.id}
         // cursor-pointer sits here rather than on TodoFace so it doesn't fight the
         // drag overlay's cursor-grabbing. The original slot stays in place but goes
         // blank while the overlay drags.

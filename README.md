@@ -519,7 +519,9 @@ carries the GitHub mark in that same slot; an Other card carries nothing, becaus
 a row reading "Other" on every personal card is noise.
 
 Picking a card up thins it to half width and centres it on the cursor wherever you
-grabbed it; dropping it widens it back out into its column.
+grabbed it; dropping it widens it back out into its column. The accounts board does
+the same — both go through `DragCardOverlay` and `useCardDrag`, so the two boards
+drag identically.
 
 **Nothing is deleted when you complete it.** Clicking `DONE` on the rail opens the
 completed list, newest first, with a Restore on every row that puts the to-do back
@@ -992,9 +994,23 @@ had deliberately left where it was.
   composes with it; animating the same element would have the two fight over one
   `transform`. The spring eases the grab offset to zero over ~7 frames, which is
   the morph — measured from a bottom-right grab: -98, -36, -15, -6, -2, -1, 0.
-- `Board.tsx` (the accounts board) still hard-codes `w-[212px]` on its own overlay.
-  Its columns are narrower, so the mismatch is a couple of dozen pixels rather than
-  180, but it is the same defect and the same fix applies.
+- Both boards now drag through the **same** three pieces, so there is one feel to
+  change rather than two to keep in step: `useCardDrag` (the board half — grab
+  measurement, the pickup offset, the landed flag), `DragCardOverlay` (the
+  in-flight card), and `useLandingWiden` (the card half). The accounts board used
+  to hard-code `w-[212px]` on its overlay and had none of the rest, so a card
+  behaved differently depending on which tab you were on.
+- The source card is measured via `[data-drag-id]`, the same attribute on both
+  boards, because one hook does the measuring for both. It replaced
+  `[data-todo-id]`; `[data-todo-card]` is a different marker and still exists, for
+  a column's click-to-create to ignore clicks that started on a card.
+- `useCardDrag` is called by the board and `useLandingWiden` by the card, and they
+  have to agree on the half-width figure. That is why they share a file rather than
+  sitting next to their callers.
+- Only the *card* overlay is shared. The accounts board's column overlay is
+  deliberately still its own thing: a column drags by its header and its overlay is
+  a label chip, not a copy of a full-height column, so `Board.tsx` calls `grab()`
+  only when the drag is not a column.
 
 - `lib/exportActivity.ts` is pure — rows in, markdown string out — so the shape of
   the document can be changed and checked without a database or an Electron window.
