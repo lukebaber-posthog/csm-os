@@ -133,7 +133,9 @@ export function TouchForm({ initial, submitLabel, onSubmit, onCancel, compact }:
         onChange={(e) => setNote(e.target.value)}
         rows={compact ? 2 : 3}
         placeholder={wantsUrl ? 'What is this link? (optional)' : 'What did you cover? (optional)'}
-        className="mt-2 resize-none"
+        /* The field grows with its content, so it is capped and scrolls itself
+           rather than pushing the submit button ever further down. */
+        className="mt-2 max-h-48 resize-none overflow-y-auto"
       />
 
       <div className="mt-2 flex gap-2">

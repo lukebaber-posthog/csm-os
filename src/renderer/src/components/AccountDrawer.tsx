@@ -49,7 +49,7 @@ export function AccountDrawer({
         className="flex-1 bg-black/20 dark:bg-black/50"
       />
       <aside className="flex h-full w-[400px] flex-col border-l border-[var(--color-line)] bg-[var(--color-page)] shadow-2xl">
-        <header className="border-b border-[var(--color-line)] px-5 py-4">
+        <header className="shrink-0 border-b border-[var(--color-line)] px-5 py-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h2 className="truncate text-[17px] font-semibold tracking-tight">
@@ -116,30 +116,35 @@ export function AccountDrawer({
           </div>
         </header>
 
-        <div className="border-b border-[var(--color-line)] px-5 py-4">
-          <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-ink-muted)]">
-            Log outreach
-          </h3>
-          <TouchForm submitLabel="Log touch" onSubmit={log.add} />
-        </div>
+        {/* One scroll region for the form and the history below it. The note
+            field grows with what is typed, so a long draft has to be able to
+            push the submit button down and still be scrolled back to. */}
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <div className="border-b border-[var(--color-line)] px-5 py-4">
+            <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-ink-muted)]">
+              Log outreach
+            </h3>
+            <TouchForm submitLabel="Log touch" onSubmit={log.add} />
+          </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-ink-muted)]">
-            History
-          </h3>
+          <div className="px-5 py-4">
+            <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-ink-muted)]">
+              History
+            </h3>
 
-          {log.error && (
-            <div className="mb-3">
-              <Notice tone="error">{log.error}</Notice>
-            </div>
-          )}
+            {log.error && (
+              <div className="mb-3">
+                <Notice tone="error">{log.error}</Notice>
+              </div>
+            )}
 
-          <TouchList
-            touches={log.touches}
-            loading={log.loading}
-            onSave={log.save}
-            onDelete={log.remove}
-          />
+            <TouchList
+              touches={log.touches}
+              loading={log.loading}
+              onSave={log.save}
+              onDelete={log.remove}
+            />
+          </div>
         </div>
       </aside>
     </div>
