@@ -6,7 +6,9 @@ import {
   verticalListSortingStrategy
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { ArrowDownUp, ArrowDownWideNarrow, ArrowUpNarrowWide } from 'lucide-react'
 import type { Column as ColumnModel } from '../hooks/useBoard'
+import { SORT_HINT, SORT_LABEL, type ColumnSort } from '../lib/columnSort'
 import type { CardColor } from '../lib/colors'
 import type { ContactChannel } from '../lib/channels'
 import { AccountCard } from './AccountCard'
@@ -23,6 +25,10 @@ interface Props {
   onRename: (stageKey: string, label: string) => void
   onDelete: (stageKey: string) => void
   canDelete: boolean
+  /** How this column's cards are currently ordered. */
+  sort: ColumnSort
+  /** Advances the column to the next order in the cycle. */
+  onCycleSort: (stageKey: string) => void
   /** The card just dropped, which widens back out into its slot. */
   landedId: string | null
   /** Highlights the column while a card hovers over it. */
@@ -37,6 +43,8 @@ export function Column({
   onRename,
   onDelete,
   canDelete,
+  sort,
+  onCycleSort,
   landedId,
   isActiveTarget
 }: Props) {
@@ -134,6 +142,25 @@ export function Column({
             <span className="shrink-0 font-mono text-[11px] tabular-nums text-[var(--color-ink-faint)]">
               {column.cards.length}
             </span>
+            <button
+              onPointerDown={stop}
+              onClick={(e) => {
+                stop(e)
+                onCycleSort(column.stage.key)
+              }}
+              title={SORT_HINT[sort]}
+              aria-label={`Order of ${column.stage.label}: ${SORT_LABEL[sort]}`}
+              className={
+                'shrink-0 rounded p-0.5 transition-opacity hover:bg-[var(--color-surface)] hover:text-[var(--color-ink)] ' +
+                // An active sort stays visible: it changes what the column
+                // means, so it shouldn't be discoverable only on hover.
+                (sort === 'manual'
+                  ? 'text-[var(--color-ink-faint)] opacity-0 group-hover/col:opacity-100'
+                  : 'text-[var(--color-ink)] opacity-100')
+              }
+            >
+              <SortIcon sort={sort} />
+            </button>
             {canDelete && (
               <button
                 onPointerDown={stop}
@@ -196,4 +223,10 @@ export function Column({
       </div>
     </section>
   )
+}
+
+function SortIcon({ sort }: { sort: ColumnSort }) {
+  const Icon =
+    sort === 'newest' ? ArrowDownWideNarrow : sort === 'oldest' ? ArrowUpNarrowWide : ArrowDownUp
+  return <Icon className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
 }

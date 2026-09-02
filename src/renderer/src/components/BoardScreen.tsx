@@ -4,6 +4,14 @@ import { useTodos } from '../hooks/useTodos'
 import type { Theme } from '../hooks/useTheme'
 import { DEFAULT_LAYOUT, layoutDef } from '../lib/layouts'
 import { loadActiveLayout, setActiveLayout } from '../lib/board'
+import {
+  loadSorts,
+  nextSort,
+  saveSorts,
+  sortCards,
+  sortMapKey,
+  type ColumnSort
+} from '../lib/columnSort'
 import { isMainView, type MainView } from '../lib/views'
 import { TopBar } from './TopBar'
 import { Board } from './Board'
@@ -77,6 +85,31 @@ export function BoardScreen({ email, theme, onToggleTheme, onSignOut }: Props) {
     localStorage.setItem(VIEW_CACHE_KEY, next)
   }, [])
 
+  /*
+   * Per-column card order, local like the view for the reasons given in
+   * `lib/columnSort` — the hand order it sits on top of is the part that syncs.
+   */
+  const [sorts, setSorts] = useState(loadSorts)
+
+  const sortOf = useCallback(
+    (stageKey: string): ColumnSort => sorts[sortMapKey(layoutKey, stageKey)] ?? 'manual',
+    [sorts, layoutKey]
+  )
+
+  const cycleSort = useCallback(
+    (stageKey: string) => {
+      setSorts((prev) => {
+        const key = sortMapKey(layoutKey, stageKey)
+        const next = { ...prev, [key]: nextSort(prev[key] ?? 'manual') }
+        // Hand order is the default, so it needs no entry of its own.
+        if (next[key] === 'manual') delete next[key]
+        saveSorts(next)
+        return next
+      })
+    },
+    [layoutKey]
+  )
+
   const board = useBoard(email, layoutKey)
   /*
    * Loaded unconditionally, beside useBoard. One select of a few dozen rows is not
@@ -130,6 +163,16 @@ export function BoardScreen({ email, theme, onToggleTheme, onSignOut }: Props) {
   const accountById = useMemo(
     () => new Map(todoAccounts.map((a) => [a.orgId, a])),
     [todoAccounts]
+  )
+
+  /*
+   * Sorting happens here rather than inside Board, so the array Board does its
+   * drop-index arithmetic against is the same one the user is looking at.
+   */
+  const sortedColumns = useMemo(
+    () =>
+      board.columns.map((col) => ({ ...col, cards: sortCards(col.cards, sortOf(col.stage.key)) })),
+    [board.columns, sortOf]
   )
 
   const onAccounts = view === 'accounts'
@@ -210,7 +253,7 @@ export function BoardScreen({ email, theme, onToggleTheme, onSignOut }: Props) {
             </div>
           ) : (
             <Board
-              columns={board.columns}
+              columns={sortedColumns}
               onOpenAccount={setOpenOrgId}
               onSetColor={board.setColor}
               onSetChannel={board.setChannel}
@@ -221,6 +264,8 @@ export function BoardScreen({ email, theme, onToggleTheme, onSignOut }: Props) {
               onReorderColumns={board.reorderColumns}
               canAddColumn={board.canAddColumn}
               canDeleteColumn={board.canDeleteColumn}
+              sortOf={sortOf}
+              onCycleSort={cycleSort}
             />
           )
         ) : todos.loading ? (
