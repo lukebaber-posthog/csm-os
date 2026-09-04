@@ -43,6 +43,14 @@ interface Props {
   onReorderColumns: (orderedKeys: string[]) => void
   canAddColumn: boolean
   canDeleteColumn: boolean
+  /**
+   * Columns are derived from each account's last contact. Drops cannot write a
+   * placement, so they ask for a touch instead — that is the only thing that can
+   * actually move a card between these columns.
+   */
+  computed: boolean
+  /** Asked for when a card is dropped into a different cadence column. */
+  onRequestTouch: (orgId: string, toStageKey: string) => void
 }
 
 /**
@@ -81,7 +89,9 @@ export function Board({
   onDeleteColumn,
   onReorderColumns,
   canAddColumn,
-  canDeleteColumn
+  canDeleteColumn,
+  computed,
+  onRequestTouch
 }: Props) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [activeType, setActiveType] = useState<'card' | 'column' | null>(null)
@@ -187,6 +197,22 @@ export function Board({
     const orgId = String(e.active.id)
 
     /*
+     * On a computed layout the drop cannot move anything by itself — the column
+     * is a fact about the touch log. Ask for the touch and stop here: no
+     * `land()`, because the card has not moved and will not until a touch is
+     * actually written. If the dialog is dismissed, nothing happened at all,
+     * which is exactly what should happen.
+     */
+    if (computed) {
+      if (!overId) return
+      const target = stageOf(overId)
+      const current = columns.find((c) => c.cards.some((card) => card.account.orgId === orgId))
+      if (!target || target.stage.key === current?.stage.key) return
+      onRequestTouch(orgId, target.stage.key)
+      return
+    }
+
+    /*
      * The landing is unconditional; only the write below is not.
      *
      * The card comes back into the DOM at full width whatever the drop decided,
@@ -232,6 +258,9 @@ export function Board({
       onDragCancel={handleDragCancel}
     >
       <div ref={scrollRef} className="flex h-full gap-3 overflow-x-auto px-5 pb-6">
+        {/* SortableContext still wraps them so the card sortables keep their
+            context, but a computed layout's headers spread no drag listeners
+            (see Column), so no column drag can start. */}
         <SortableContext items={columnIds} strategy={horizontalListSortingStrategy}>
           {columns.map((column) => (
             <Column
@@ -243,13 +272,18 @@ export function Board({
               onRename={onRename}
               onDelete={onDeleteColumn}
               canDelete={canDeleteColumn}
+              computed={computed}
               landedId={landedId}
               isActiveTarget={activeType === 'card' && targetStage === column.stage.key}
             />
           ))}
         </SortableContext>
 
-        <AddColumn canAdd={canAddColumn} count={columns.length} onAdd={onAddColumn} />
+        {/* No add control on a computed layout: the columns are a rule, and a
+            sixth one would have no range to cover. */}
+        {!computed && (
+          <AddColumn canAdd={canAddColumn} count={columns.length} onAdd={onAddColumn} />
+        )}
       </div>
 
       <DragOverlay dropAnimation={DROP_ANIM}>

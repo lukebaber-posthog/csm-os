@@ -12,6 +12,7 @@ import type { TodoAccount } from './TodoCard'
 import { CompletionFxLayer } from './CompletionFxLayer'
 import { SettingsDialog } from './SettingsDialog'
 import { CompletedDialog } from './CompletedDialog'
+import { CadenceTouchDialog, type PendingTouch } from './CadenceTouchDialog'
 import { AccountDrawer } from './AccountDrawer'
 import { Notice } from './ui/Notice'
 import { Spinner } from './ui/Spinner'
@@ -88,6 +89,8 @@ export function BoardScreen({ email, theme, onToggleTheme, onSignOut }: Props) {
   const [openOrgId, setOpenOrgId] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [completedOpen, setCompletedOpen] = useState(false)
+  /** Set while the cadence board is asking what a dragged card's contact was. */
+  const [pendingTouch, setPendingTouch] = useState<PendingTouch | null>(null)
 
   /*
    * The native Settings item (Cmd+,) and the header button open the same dialog.
@@ -193,7 +196,7 @@ export function BoardScreen({ email, theme, onToggleTheme, onSignOut }: Props) {
         {/*
           Every gate below is scoped to its own view. The empty-book one especially:
           unscoped, `accountCount === 0` short-circuits this whole element, so a CSM
-          with nothing assigned in Vitally could never reach their to-dos at all.
+          with nothing assigned could never reach their to-dos at all.
         */}
         {onAccounts ? (
           board.loading ? (
@@ -203,9 +206,9 @@ export function BoardScreen({ email, theme, onToggleTheme, onSignOut }: Props) {
           ) : board.accountCount === 0 && !board.error ? (
             <div className="flex flex-1 items-center justify-center px-6">
               <p className="max-w-sm text-center text-[13px] leading-relaxed text-[var(--color-ink-muted)]">
-                No accounts are assigned to {email} in Vitally. If that looks wrong, check that
-                your PostHog key can read the{' '}
-                <code className="font-mono text-[12px]">vitally_csm_managed_accounts</code> view.
+                No accounts have {email} as their CSM in Customer Analytics. If that looks
+                wrong, check the CSM relationship on the accounts in{' '}
+                <code className="font-mono text-[12px]">system.account_relationships</code>.
               </p>
             </div>
           ) : (
@@ -221,6 +224,20 @@ export function BoardScreen({ email, theme, onToggleTheme, onSignOut }: Props) {
               onReorderColumns={board.reorderColumns}
               canAddColumn={board.canAddColumn}
               canDeleteColumn={board.canDeleteColumn}
+              computed={board.computed}
+              onRequestTouch={(orgId, stageKey) => {
+                const account = board.columns
+                  .flatMap((c) => c.cards)
+                  .find((c) => c.account.orgId === orgId)?.account
+                const stage = board.columns.find((c) => c.stage.key === stageKey)?.stage
+                if (!account || !stage) return
+                setPendingTouch({
+                  orgId,
+                  orgName: account.orgName,
+                  stageKey,
+                  stageLabel: stage.label
+                })
+              }}
             />
           )
         ) : todos.loading ? (
@@ -258,6 +275,18 @@ export function BoardScreen({ email, theme, onToggleTheme, onSignOut }: Props) {
         flick back to the accounts view mid-flight.
       */}
       <SettingsDialog open={settingsOpen} email={email} onOpenChange={setSettingsOpen} />
+
+      {/*
+        Only ever open on the cadence board, where a drop has to become a touch
+        before the card can move. Mounted here rather than inside Board so the
+        board stays a pure drag surface.
+      */}
+      <CadenceTouchDialog
+        pending={pendingTouch}
+        email={email}
+        onLogged={board.setLastTouch}
+        onClose={() => setPendingTouch(null)}
+      />
 
       <CompletedDialog
         open={completedOpen}

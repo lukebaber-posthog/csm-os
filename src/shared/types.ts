@@ -8,7 +8,6 @@ export interface Account {
   /** Annual recurring revenue in USD. Never persisted to Supabase. */
   arr: number | null
   csmDateAssigned: string | null
-  isTamOverlay: boolean
   /**
    * The account's own website domain, used to fetch its logo. Null when
    * Salesforce has no domain for it (about 3% of accounts), which the chip

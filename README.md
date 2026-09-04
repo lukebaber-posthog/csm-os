@@ -64,7 +64,7 @@ process rather than the renderer:
 | Variable | Default | Change it when |
 | --- | --- | --- |
 | `POSTHOG_HOST` | `https://us.posthog.com` | You're querying EU cloud |
-| `POSTHOG_PROJECT_ID` | `2` | The Vitally view lives in another project |
+| `POSTHOG_PROJECT_ID` | `2` | The customer-analytics tables live in this project |
 
 `.env` is gitignored; `.env.example` is the checked-in template, so a new
 variable belongs in both. Restart `pnpm dev` after editing `.env`.
@@ -106,9 +106,9 @@ remembered, so later launches open straight onto the board; signing out clears
 your email but keeps the key, so you don't re-paste it.
 
 **If the board comes up empty**, the sign-in worked and the lookup found
-nothing. Assignment is read from Vitally's `customer_success_manager` field —
-see [Where the accounts come from](#where-the-accounts-come-from) — so accounts
-you cover only as a TAM overlay won't appear.
+nothing. Assignment is read from the **CSM** relationship in PostHog's Customer
+Analytics — see [Where the accounts come from](#where-the-accounts-come-from) —
+so accounts you hold under any other role won't appear.
 
 ### Make it your own
 
@@ -229,41 +229,133 @@ it while you drag near an edge.
 - New accounts appearing in PostHog land at the bottom of the leftmost column of
   each layout on the next sync. Re-syncing never disturbs cards already placed.
 
+## The Cadence board is computed
+
+The **Relationship** layout is what it always was: columns you name, cards you
+drag, placements in `board_placements`.
+
+**Cadence is not.** Its columns are a rule over the touch log — Never contacted,
+31+ days, 21–30, 11–20, 4–10, 0–3 — and an account is in whichever one its last
+logged contact falls into. Nothing is stored: the layout skips
+`loadStages`/`loadPlacements` entirely, which also means `reconcilePlacements`
+stops writing a row per account per sync for a layout that never reads them back.
+
+Cards sort **most stale first** inside each column, so the one nearest to needing
+attention is at the top of the column that needs attention most.
+
+**Its columns cannot be renamed, added, deleted, or reordered.** There is nothing
+to persist, and a rename would only let the label disagree with the rule that
+fills it. `Column` spreads no drag listeners and hides its delete control when
+`computed`, so no gesture is offered that could not work.
+
+**Never contacted is its own column, not "infinitely stale".** Never having
+spoken to an account is a different fact from having let one go quiet, and only
+one of them is fixed by getting in touch.
+
+### Dragging on a computed board
+
+A drop cannot move a card here, because the column is a fact about the touch log.
+So dropping a card into a different column **opens the touch form** for that
+account, seeded to a date that would put it where you dropped it. Log the touch
+and the card moves because the underlying fact changed. Dismiss the dialog and
+nothing is written.
+
+That the card returns on dismiss costs no code: the board reads from the touch
+log and nothing was optimistically moved, so there is no state to unwind. It is
+why this can be a plain dialog rather than a move-then-confirm.
+
+The seeded date is the **newest** end of the range — drop into "21–30 days" and
+it offers 21 days ago, not 30, because dating it 30 back would push the card out
+of the column again tomorrow. The field stays editable, and changing it lands the
+card wherever that date actually belongs rather than forcing the drop to come
+true.
+
+**The rejected alternative was writing the touch silently from the drop.** It
+would have invented outreach that never happened and put it in the weekly export
+as though it had.
+
 ## Where the accounts come from
 
-Ownership is read from Vitally, which is the system of record for CSM
-assignment:
+Ownership is PostHog's own Customer Analytics: `system.account_relationships`,
+the native record of who holds which role on which account.
 
 ```sql
-SELECT organization_id, organization_name, segment, arr,
-       csm_date_assigned, is_tam_overlay
-FROM vitally_csm_managed_accounts
-WHERE customer_success_manager = '<your email>'
+SELECT a.external_id, a.name, round(p.mrr * 12, 2) AS arr,
+       toString(toDate(r.started_at)) AS csm_date_assigned
+FROM system.account_relationships AS r
+LEFT ANY JOIN system.accounts AS a ON a.id = r.account_id
+LEFT ANY JOIN system.account_relationship_definitions AS d ON d.id = r.definition_id
+WHERE d.name = 'CSM' AND r.ended_at IS NULL AND a.churned_at IS NULL
+  AND r.user_id IN (SELECT id FROM postgres_posthog_user WHERE lower(email) = '<your email>')
 ```
 
 This runs through PostHog's query API against project 2.
 
-**Why Vitally and not billing.** PostHog's production billing tables
-(`billing_accountexecutivehistory`) only carry a CSM row for part of a book —
-accounts owned via TAM overlay have an Account Executive row but no CSM row. For
-`luke.baber@posthog.com` billing returns 27 accounts and omits Cline Bot,
-Cluely, USMobile, and Wispr AI. Vitally returns all 31.
+**This replaced Vitally**, which used to be the system of record here
+(`vitally_csm_managed_accounts`). Customer Analytics is not merely equivalent, it
+is ahead: compared across every CSM's book on 2026-09-01, 308 organizations
+appeared in both, **15 only in Customer Analytics, and 1 only in Vitally**. For
+`luke.baber@posthog.com` the two agreed exactly — the same 31 organizations with
+the same assignment dates.
 
-**This is a CSM lookup, not a CSM-or-TAM lookup.** `customer_success_manager` is
-the only email on the view. `is_tam_overlay` is a 0/1 flag riding on the *CSM's*
-row, meaning "this account also has a TAM" — it never says who that TAM is, so
-there is no way to ask the view "which accounts am I the TAM for?". Vitally has
-no TAM key role either; its labels are Onboarding Specialist, Account Executive,
-Account Owner, CSM, and Forward Deployed Engineer. Anyone whose accounts come to
+Ignore the "stale" warning on the `CSM (Vitally)` custom property, which says
+Customer Analytics' relationship data cannot be trusted "until the ownership flip
+lands". That note predates the flip; the comparison above is what the data
+actually says now.
+
+**Relationships carry an effective range**, so `ended_at IS NULL` is the whole
+"current holder" filter — the table keeps ended assignments rather than deleting
+them, which is why this is a live view and not a snapshot. `churned_at IS NULL`
+drops churned accounts; none of this book is churned today.
+
+**The email-to-user-id hop.** Assignments key on a numeric PostHog user id and no
+`system.*` table exposes an email, so the query resolves it through
+`postgres_posthog_user`. The alternative — reading the id from
+`/api/users/@me/` — would have quietly changed the question from "this email's
+book" to "the API key owner's book".
+
+**This is a CSM lookup, not a CSM-or-TAM lookup**, and that has not changed. The
+role set is Onboarding specialist, Account owner, Account executive, CSM, and
+Forward deployed engineer; there is no TAM role. Anyone whose accounts come to
 them purely as an overlay signs in fine and gets an empty board.
 
-Closing that would mean a second query against a different source. The nearest
-email-keyed one is `vitally_all_managed_accounts_including_overlay`, which
-carries `customer_success_manager` and `account_executive` side by side — but it
-is a different population (464 rows against this view's 308, since it drops the
-`segment = 'CSM Managed'` filter), so adopting it changes existing boards too.
-`csm_effort_v6.tam` is the only column that names a TAM, and it holds display
-names rather than emails.
+**`is_tam_overlay` is gone.** Vitally carried it as a 0/1 flag on the CSM's row
+meaning "this account also has a TAM", and it had no native equivalent — no TAM
+role exists, and Account executive does not stand in for it (Cline Bot and Wispr
+AI carry the flag, but so does USMobile, which does not). It covered 2 of 31
+accounts. Restoring it properly means creating a TAM relationship definition in
+Customer Analytics and assigning it.
+
+**`segment` is now a literal.** Vitally's value was `CSM Managed` for every row
+of every book — the view only contained CSM-managed accounts, so the field was
+constant by construction. Customer Analytics has no equivalent and its `Region`
+property is unset across this whole book, so the panel shows the same constant
+rather than growing a hole. It is the obvious slot to repurpose.
+
+### ARR is a different number now
+
+There is **no native field equal to Vitally's `arr`**, so the cards show the `MRR`
+account custom property annualised (net invoiced dollars, post-discount, × 12).
+
+It agrees exactly with the old figure on a good share of the book — Cline Bot
+231,644.40, T3 Tools 68,355.12, Determinate Systems 146,802.24, LayerZero
+51,503.64, DubClub, Hedra and Moonshot all land on the cent. It differs elsewhere,
+most sharply on **Wispr AI, which reads 523,405.92 against Vitally's
+1,046,405.34**. Vitally's ARR was its own smoothed measure, not an annualised MRR.
+
+Two other properties were measured and rejected. `Forecasted MRR × 12` projects
+the next invoice and goes negative on AWeber. `Confirmed MRR × 12` excludes
+upcoming invoices, so it is a partial-month figure that cannot be annualised at
+all: it reads 3,000 for 713 Online and 5,400 for Cline Bot. Only the `MRR`
+property is complete (31/31), never negative, and stable enough to sit on a card.
+
+**A HogQL trap, measured.** Two `LEFT ANY JOIN` subqueries of the same shape
+against `postgres_customer_analytics_custompropertyvalue`, differing only in which
+definition they filter to, **return each other's values** — `Confirmed MRR` came
+back carrying `MRR`'s numbers, which is how the wrong property nearly shipped. Do
+not add a second property join beside the existing one; pivot with `argMaxIf` over
+a single scan instead, and verify any property value against an isolated query
+before trusting it.
 
 ## Where the logos come from
 
@@ -271,10 +363,17 @@ names rather than emails.
 which rides along on the accounts query:
 
 ```sql
-JSONExtractString(coalesce(a.traits, ''), 'sfdc.Domain__c') AS domain
-FROM vitally_csm_managed_accounts v
-LEFT JOIN vitally_accounts a ON a.external_id = v.organization_id
+coalesce(
+    nullIf(sf.domain_c, ''),
+    nullIf(JSONExtractString(toString(a.properties), 'website_domain'), '')
+) AS domain
 ```
+
+Two sources coalesced, because neither covers the book alone. Salesforce's
+`domain_c` — the same field the old Vitally query reached through cached traits,
+now read directly via `system.accounts.sfdc_id` — misses 5 of 31. The account's
+own `website_domain` property misses 15. Together they miss 2, which is the
+coverage the Vitally join gave, without Vitally.
 
 `AccountChip` turns that into
 `https://img.logo.dev/<domain>?token=…&size=128&format=png&theme=light&fallback=404`,
@@ -891,7 +990,7 @@ had deliberately left where it was.
   step.
 - `BoardScreen`'s two `<main>` short-circuits are scoped to the accounts view.
   Unscoped, `accountCount === 0` swallows the whole element — so a CSM with
-  nothing assigned in Vitally could never reach their to-dos.
+  nothing assigned could never reach their to-dos.
 
 - The composer animates opacity and transform ONLY. An earlier version animated
   `height: 0 -> 'auto'` inside an `overflow-hidden` wrapper, which is motion's
@@ -943,9 +1042,33 @@ had deliberately left where it was.
   `org_id`. Radix surfaces the selected label only through the matching item, so a
   to-do pointing at an account no longer in the book rendered a trigger holding
   nothing but a chevron, and simply saving the form dropped the link silently.
-- The header's Sync button refreshes BOTH boards. It renders in both views, so
+- The header's right-hand side is an **avatar menu**, not a row of buttons.
+  Confetti, the theme toggle, Settings and Sign out were all app-level — none of
+  them acted on what was on screen — so as labelled buttons they competed with the
+  board for attention and width. The layout picker stayed in the bar precisely
+  because it *is* board-level. The signed-in email became the menu's label, which
+  is where an account menu says whose account it is.
+- The avatar is a monogram and always will be: PostHog's identity carries an email
+  and a first name, no photo, so there is no picture for it to be a placeholder
+  for.
+- Confetti now renders in the menu on both views, where it used to appear only on
+  the to-do board. A row that appeared and vanished with the tab would read as a
+  glitch, and the menu is app-level.
+- The header's sync control refreshes BOTH boards. It renders in both views, so
   wiring it only to `board.refresh()` made it look like the obvious way to recover
   a to-do board that failed its initial load, while doing nothing for it.
+- That control is a **refresh icon, not a labelled button**, and the "Synced N
+  ago" line it replaced is now its tooltip (500ms delay). The age and the action
+  that changes it are one subject, so they are one control rather than a sentence
+  at one end of the bar and a button at the other. It stays in both views for the
+  reason above — scoping it to the accounts view would take the recovery path
+  away from the to-do board again.
+- The tooltip's text is a **component** (`SyncAge`), not an inlined
+  `{syncAge(fetchedAt)}`. JSX children are evaluated during the parent's render,
+  so an inlined call would freeze the string at whenever `TopBar` last rendered —
+  and now that the tooltip is the only place the age appears, a board left open
+  for an hour would go on claiming it synced "2 min ago". Radix mounts content on
+  open, so a component re-reads the clock every time it is shown.
 
 - Settings live in `lib/settings.ts`, a small external store over localStorage
   rather than React context — the writer (the dialog) and the reader (the effect
@@ -1125,6 +1248,62 @@ had deliberately left where it was.
   Simulate the whole failure by deleting a key from `out/preload/index.mjs` and
   relaunching; it is the only faithful reproduction, since contextBridge properties
   are non-configurable and cannot be deleted from the renderer.
+
+### Reviewing the UI in a browser
+
+`pnpm dev` serves the interface to any browser, so `http://localhost:5173` opens
+the board in a tab — useful for reviewing and annotating the layout next to the
+app window.
+
+A tab has no Electron **preload**, so `window.api` is absent and the app used to
+stop dead on its first bridge call. `lib/devBridge.ts` installs a stand-in from
+`main.tsx` when there is no real bridge, and a dev-only Vite endpoint
+(`/__dev/accounts`, in `electron.vite.config.ts`) hands it the account book from
+the cache the main process writes on every successful sync. **Run a sync in the
+app window once and the tab has your real accounts, ARR and all** — no API key
+ever reaches the browser, because the key lives in the OS keychain and only the
+main process can read it.
+
+Only four things are stubbed: the keychain (`posthog.connect`), the native save
+dialog (`files.saveText` becomes a browser download, so the weekly export still
+works), the app menu, and the accounts fetch described above. Everything else —
+colours, channels, touches, to-dos, logos — was always Supabase read straight
+from the renderer, so it is the real thing in both.
+
+**It never ships.** The only call site is behind `import.meta.env.DEV`, which
+Vite replaces with `false` in a build, so the dynamic import is eliminated and
+the module is not in the production bundle. The Vite endpoint is `apply: 'serve'`
+and does not exist in a build either. `installDevBridge` also refuses to install
+over a real bridge, so it cannot shadow Electron's.
+
+**Two deliberate choices about fidelity.** The payload reports `fromCache: false`
+even though it came from a cache: `true` paints the "PostHog was unreachable"
+banner across the top of the board, and a strip of UI the real app would not be
+showing sits exactly where a reviewer is trying to look. The age is still honest,
+because `fetchedAt` is the cache's own timestamp and the header renders it. And
+nothing draws a badge on the page — the install logs to the console instead —
+for the same reason: a tab is for judging pixels, so its pixels must match.
+
+**The endpoint needs one `pnpm dev` restart** to exist at all, because Vite reads
+its config only at startup. Until then there is a fallback: a snapshot of the
+book pasted into `localStorage['csm-os:dev-accounts']`, which the bridge uses
+whenever the endpoint is missing or empty. Seed it from the same cache file:
+
+```js
+// paste in the tab's console, with the contents of
+// ~/Library/Application Support/csm-os/accounts-<url-encoded email>.json
+localStorage.setItem('csm-os:dev-accounts', '<that file>')
+```
+
+The endpoint is preferred once it exists, because it re-reads the cache on every
+call and so follows a re-sync on its own. **The snapshot is frozen at whenever it
+was pasted** — if the book changes, re-paste it or restart the dev server.
+
+**Why the failure was cryptic before.** A request for a missing endpoint does not
+404: Vite's SPA fallback answers **200 with `index.html`**, so nothing goes wrong
+until `res.json()` meets a `<` and reports `Unexpected token '<'`. Status is
+useless as a signal here, so the bridge checks the **content type** instead and
+says which of the two fixes applies.
 
 ### Testing drag-and-drop from a script
 

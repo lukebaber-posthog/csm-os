@@ -57,7 +57,6 @@ export function AccountDrawer({
               </h2>
               <p className="mt-0.5 text-[12px] text-[var(--color-ink-muted)]">
                 {contactAge(card.lastTouchedAt)}
-                {card.account.isTamOverlay && ' · TAM overlay'}
               </p>
             </div>
             <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close panel">

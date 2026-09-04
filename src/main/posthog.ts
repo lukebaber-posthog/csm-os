@@ -6,7 +6,7 @@ import type { Account, PostHogIdentity } from '../shared/types.js'
  */
 
 const HOST = process.env.POSTHOG_HOST ?? 'https://us.posthog.com'
-/** The project holding the `vitally_csm_managed_accounts` view. */
+/** The project holding the customer-analytics account tables. */
 const PROJECT_ID = Number(process.env.POSTHOG_PROJECT_ID ?? 2)
 
 const REQUEST_TIMEOUT_MS = 30_000
@@ -66,11 +66,19 @@ export async function verifyKey(key: string): Promise<PostHogIdentity> {
 }
 
 /**
- * Pulls the accounts assigned to `csmEmail` from Vitally's CSM-managed view.
+ * Pulls the accounts assigned to `csmEmail` from PostHog's own Customer
+ * Analytics tables.
  *
- * Source note: PostHog's production billing tables only carry a CSM row for a
- * subset of a book (they miss accounts owned via TAM overlay), so ownership is
- * read from Vitally, which is the system of record for CSM assignment.
+ * Ownership is `system.account_relationships` — the native assignment record,
+ * one row per user-to-account role with an effective range. Filtering on
+ * `ended_at IS NULL` gives the current holders; the same table keeps ended
+ * assignments, so this is a live view rather than a snapshot.
+ *
+ * This replaced `vitally_csm_managed_accounts`. Customer Analytics is not just
+ * a like-for-like source, it is ahead of Vitally: compared across every CSM's
+ * book on 2026-09-01, 308 organizations appeared in both, 15 only in Customer
+ * Analytics, and 1 only in Vitally. For this book the two agreed exactly — same
+ * 31 organizations, same assignment dates.
  */
 export async function fetchAccounts(key: string, csmEmail: string): Promise<Account[]> {
   if (!EMAIL_RE.test(csmEmail)) {
@@ -78,26 +86,60 @@ export async function fetchAccounts(key: string, csmEmail: string): Promise<Acco
   }
 
   /*
-   * The join is only for the logo. Vitally's own account record carries the
-   * Salesforce fields, and `sfdc.Domain__c` is the account's website — which is
-   * what logo.dev looks a mark up by. It is a LEFT join because a missing
-   * domain must cost the account its logo, not its row; `coalesce` rather than
-   * `assumeNotNull` for the same reason, since an unmatched row's traits are
-   * genuinely NULL. Coverage is 295 of 304 accounts across every book.
+   * Notes on the joins, in the order they bite:
+   *
+   * - `postgres_posthog_user` is the email-to-user-id hop. Relationships key on
+   *   a numeric PostHog user id and no system table exposes the email, so the
+   *   alternative was an extra `/api/users/@me/` round trip that would also have
+   *   silently changed the semantics from "this email's book" to "the key
+   *   owner's book". Resolving it here keeps the caller's contract.
+   * - Domain feeds logo.dev and is `coalesce`d across two sources because
+   *   neither covers the book alone: Salesforce's `domain_c` (the same field the
+   *   Vitally query reached through cached traits) misses 5 of 31, and the
+   *   account's own `website_domain` property misses 15. Together they miss 2 —
+   *   the same coverage the Vitally join gave, without Vitally.
+   * - ARR is the `MRR` account custom property annualised. There is no native
+   *   field equal to Vitally's `arr`; see the README for what changes.
+   *
+   * Every join is LEFT ANY: enrichment must cost an account a field, never its
+   * row. ANY also stops a duplicate on the right multiplying the book.
+   *
+   * Careful with the custom-property join — do NOT add a second one beside it
+   * for another property. Two subqueries of this shape against the same table
+   * returned each other's values (measured: `Confirmed MRR` came back carrying
+   * `MRR`'s numbers). Pivot with `argMaxIf` over one scan instead.
    */
   const hogql = `
     SELECT
-        v.organization_id,
-        v.organization_name,
-        v.segment,
-        v.arr,
-        toString(v.csm_date_assigned) AS csm_date_assigned,
-        v.is_tam_overlay,
-        JSONExtractString(coalesce(a.traits, ''), 'sfdc.Domain__c') AS domain
-    FROM vitally_csm_managed_accounts v
-    LEFT JOIN vitally_accounts a ON a.external_id = v.organization_id
-    WHERE v.customer_success_manager = '${csmEmail}'
-    ORDER BY v.organization_name
+        a.external_id AS organization_id,
+        a.name AS organization_name,
+        round(p.mrr * 12, 2) AS arr,
+        toString(toDate(r.started_at)) AS csm_date_assigned,
+        coalesce(
+            nullIf(sf.domain_c, ''),
+            nullIf(JSONExtractString(toString(a.properties), 'website_domain'), '')
+        ) AS domain
+    FROM system.account_relationships AS r
+    LEFT ANY JOIN system.accounts AS a ON a.id = r.account_id
+    LEFT ANY JOIN system.account_relationship_definitions AS d ON d.id = r.definition_id
+    LEFT ANY JOIN (SELECT id, domain_c FROM salesforce_account) AS sf ON sf.id = a.sfdc_id
+    LEFT ANY JOIN (
+        SELECT account_id, argMax(value_num, created_at) AS mrr
+        FROM postgres_customer_analytics_custompropertyvalue
+        WHERE is_deleted = 0
+          AND definition_id IN (
+              SELECT toString(id) FROM system.custom_property_definitions WHERE name = 'MRR'
+          )
+        GROUP BY account_id
+    ) AS p ON p.account_id = toString(a.id)
+    WHERE d.name = 'CSM'
+      AND r.ended_at IS NULL
+      AND a.churned_at IS NULL
+      AND r.user_id IN (
+          SELECT id FROM postgres_posthog_user
+          WHERE lower(email) = '${csmEmail.toLowerCase()}' AND is_active
+      )
+    ORDER BY a.name
     LIMIT 500
   `.trim()
 
@@ -119,10 +161,17 @@ export async function fetchAccounts(key: string, csmEmail: string): Promise<Acco
   return (res.results ?? []).map((row) => ({
     orgId: String(at(row, 'organization_id') ?? ''),
     orgName: String(at(row, 'organization_name') ?? 'Unknown account'),
-    segment: str(at(row, 'segment')),
+    /*
+     * A literal, not a column. Vitally's `segment` was 'CSM Managed' for every
+     * row of every book — the view only contained CSM-managed accounts, so the
+     * field was constant by construction and carried no information. Customer
+     * Analytics has no equivalent, and its `Region` property is unset across
+     * this whole book, so nothing native can fill the slot yet. Kept as the same
+     * constant rather than dropped so the panel does not grow a hole.
+     */
+    segment: 'CSM Managed',
     arr: at(row, 'arr') == null ? null : Number(at(row, 'arr')),
     csmDateAssigned: str(at(row, 'csm_date_assigned')),
-    isTamOverlay: Number(at(row, 'is_tam_overlay') ?? 0) === 1,
     domain: str(at(row, 'domain'))
   }))
 }

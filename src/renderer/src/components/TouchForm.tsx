@@ -25,6 +25,12 @@ interface Props {
   onSubmit: (values: TouchValues) => Promise<boolean>
   /** Present only when the form can be dismissed, i.e. while editing. */
   onCancel?: () => void
+  /**
+   * Seeds the date when logging a new touch, as `yyyy-mm-dd`. The cadence board
+   * uses it so a card dropped into "11–20 days" opens on a date that would put
+   * it there. Ignored while editing, where the touch's own date wins.
+   */
+  defaultDate?: string
   /** Tighter spacing, for use inline inside the history list. */
   compact?: boolean
 }
@@ -39,9 +45,18 @@ interface Props {
  * the optional part — which is why the field appears above the note and why
  * submit is blocked without it, the only required field this form has ever had.
  */
-export function TouchForm({ initial, submitLabel, onSubmit, onCancel, compact }: Props) {
+export function TouchForm({
+  initial,
+  submitLabel,
+  onSubmit,
+  onCancel,
+  compact,
+  defaultDate
+}: Props) {
   const [channel, setChannel] = useState<TouchChannel>(initial?.channel ?? 'email')
-  const [date, setDate] = useState(initial ? toDateInput(initial.occurredAt) : todayInput())
+  const [date, setDate] = useState(
+    initial ? toDateInput(initial.occurredAt) : (defaultDate ?? todayInput())
+  )
   const [note, setNote] = useState(initial?.note ?? '')
   /*
    * Kept across a channel change rather than cleared with it, so flipping to
