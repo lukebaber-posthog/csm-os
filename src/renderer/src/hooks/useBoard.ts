@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Account } from '../../../shared/types'
-import { MAX_COLUMNS, MIN_COLUMNS, type Stage } from '../lib/layouts'
+import {
+  MAX_COLUMNS,
+  MIN_COLUMNS,
+  cadenceBucketOf,
+  layoutDef,
+  type Stage
+} from '../lib/layouts'
+import { daysSince } from '../lib/format'
 import type { CardColor } from '../lib/colors'
 import type { ContactChannel } from '../lib/channels'
 import {
@@ -51,6 +58,12 @@ interface BoardState {
   reorderColumns: (orderedKeys: string[]) => Promise<void>
   canAddColumn: boolean
   canDeleteColumn: boolean
+  /**
+   * Columns come from the data, not from `board_placements`. Nothing structural
+   * can be edited, and a drop has to change the underlying fact instead of a
+   * position — see `Board`'s cadence branch.
+   */
+  computed: boolean
   setColor: (orgId: string, color: CardColor | null) => Promise<void>
   setChannel: (orgId: string, channel: ContactChannel | null) => Promise<void>
   /**
@@ -68,6 +81,9 @@ export function useBoard(email: string, layoutKey: string): BoardState {
   const [lastTouches, setLastTouches] = useState<Record<string, string>>({})
   const [stages, setStages] = useState<Stage[]>([])
   const [placements, setPlacements] = useState<Placement[]>([])
+
+  /** Whether this layout's columns come from the data rather than from drops. */
+  const computed = layoutDef(layoutKey).computed === true
 
   const [loadingAccounts, setLoadingAccounts] = useState(true)
   const [loadingLayout, setLoadingLayout] = useState(true)
@@ -136,6 +152,19 @@ export function useBoard(email: string, layoutKey: string): BoardState {
     async function run() {
       setLoadingLayout(true)
       try {
+        /*
+         * A computed layout has no rows to fetch. Skipping the round trip is the
+         * small win; the real one is not calling `reconcilePlacements`, which
+         * would otherwise write a placement per account per sync for a layout
+         * that never reads them back.
+         */
+        if (computed) {
+          if (cancelled || !alive.current) return
+          setStages(layoutDef(layoutKey).stages.map((st, i) => ({ ...st, position: i })))
+          setPlacements([])
+          return
+        }
+
         const [stageRows, existing] = await Promise.all([
           loadStages(email, layoutKey),
           loadPlacements(email, layoutKey)
@@ -160,9 +189,32 @@ export function useBoard(email: string, layoutKey: string): BoardState {
     return () => {
       cancelled = true
     }
-  }, [email, layoutKey, accounts])
+  }, [email, layoutKey, accounts, computed])
 
   const columns = useMemo<Column[]>(() => {
+    if (computed) {
+      /*
+       * Bucketed by last contact, and sorted most stale first inside each
+       * column so the card nearest to needing attention sits at the top. There
+       * is no `position` to honour here — the data decides both which column a
+       * card is in and where it sits in it.
+       */
+      return stages.map((stage) => ({
+        stage,
+        cards: accounts
+          .map((a) => ({
+            account: a,
+            stageKey: cadenceBucketOf(daysSince(lastTouches[a.orgId] ?? null)),
+            position: 0,
+            lastTouchedAt: lastTouches[a.orgId] ?? null,
+            color: colors[a.orgId] ?? null,
+            channel: channels[a.orgId] ?? null
+          }))
+          .filter((c) => c.stageKey === stage.key)
+          .sort((x, y) => (x.lastTouchedAt ?? '').localeCompare(y.lastTouchedAt ?? ''))
+      }))
+    }
+
     const placed = new Map(placements.map((p) => [p.orgId, p]))
 
     return stages.map((stage) => ({
@@ -182,10 +234,18 @@ export function useBoard(email: string, layoutKey: string): BoardState {
         })
         .sort((x, y) => x.position - y.position)
     }))
-  }, [accounts, placements, stages, lastTouches, colors, channels])
+  }, [accounts, placements, stages, lastTouches, colors, channels, computed])
 
   const move = useCallback(
     async (orgId: string, toStageKey: string, toIndex: number) => {
+      /*
+       * A computed layout has no placement to write — the column a card sits in
+       * is a fact about its touch log. `Board` routes drops there to the touch
+       * dialog instead, and this guard is the backstop so a stray call cannot
+       * write a placement row the board will never read.
+       */
+      if (computed) return
+
       const target = columns.find((c) => c.stage.key === toStageKey)
       if (!target) return
 
@@ -355,8 +415,10 @@ export function useBoard(email: string, layoutKey: string): BoardState {
     addColumn,
     deleteColumn,
     reorderColumns,
-    canAddColumn: stages.length < MAX_COLUMNS,
-    canDeleteColumn: stages.length > MIN_COLUMNS,
+    // Both false on a computed layout: its columns are a rule, not a list.
+    canAddColumn: !computed && stages.length < MAX_COLUMNS,
+    canDeleteColumn: !computed && stages.length > MIN_COLUMNS,
+    computed,
     setColor,
     setChannel,
     setLastTouch

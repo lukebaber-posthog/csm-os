@@ -12,6 +12,7 @@ import { BUCKET_LABELS } from '../lib/todos'
 import { Notice } from './ui/Notice'
 import { Spinner } from './ui/Spinner'
 import { AccountChip } from './AccountChip'
+import { FormattedText } from './FormattedText'
 import type { TodoAccount } from './TodoCard'
 
 interface Props {
@@ -89,7 +90,9 @@ export function CompletedDialog({ open, email, accountOf, onRestore, onOpenChang
                   )}
 
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[12px] text-[var(--color-ink)]">{todo.title}</p>
+                    <p className="truncate text-[12px] text-[var(--color-ink)]">
+                      <FormattedText text={todo.title} />
+                    </p>
                     <p className="mt-0.5 truncate text-[10px] text-[var(--color-ink-faint)]">
                       {BUCKET_LABELS[todo.bucket]}
                       {account && ` · ${account.orgName}`}

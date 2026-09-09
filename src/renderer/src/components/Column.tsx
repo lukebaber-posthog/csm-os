@@ -25,6 +25,12 @@ interface Props {
   onRename: (stageKey: string, label: string) => void
   onDelete: (stageKey: string) => void
   canDelete: boolean
+  /**
+   * The column is a rule over the data, so its label is not editable and it
+   * cannot be reordered or removed. Renaming "11–20 days" would only let the
+   * label disagree with what fills it.
+   */
+  computed: boolean
   /** How this column's cards are currently ordered. */
   sort: ColumnSort
   /** Advances the column to the next order in the cycle. */
@@ -43,6 +49,7 @@ export function Column({
   onRename,
   onDelete,
   canDelete,
+  computed,
   sort,
   onCycleSort,
   landedId,
@@ -104,12 +111,16 @@ export function Column({
       }
     >
       <header
-        // The header is the drag handle. The 5px activation distance keeps a
-        // click (rename, delete) from being read as the start of a drag.
-        {...sortable.attributes}
-        {...sortable.listeners}
-        title="Drag to reorder this column"
-        className="mb-2.5 flex cursor-grab items-center justify-between gap-2 px-1 active:cursor-grabbing"
+        // The header is the drag handle, except on a computed layout where there
+        // is no order to change — spreading the listeners there would offer a
+        // gesture that cannot do anything.
+        {...(computed ? {} : sortable.attributes)}
+        {...(computed ? {} : sortable.listeners)}
+        title={computed ? undefined : 'Drag to reorder this column'}
+        className={
+          'mb-2.5 flex items-center justify-between gap-2 px-1 ' +
+          (computed ? '' : 'cursor-grab active:cursor-grabbing')
+        }
       >
         {editing ? (
           <input
@@ -129,9 +140,13 @@ export function Column({
           />
         ) : (
           <button
-            onDoubleClick={() => setEditing(true)}
-            title="Double-click to rename"
-            className="min-w-0 flex-1 truncate text-left text-[12px] font-semibold uppercase tracking-wider text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"
+            onDoubleClick={computed ? undefined : () => setEditing(true)}
+            title={computed ? undefined : 'Double-click to rename'}
+            className={
+              'min-w-0 flex-1 truncate text-left text-[12px] font-semibold uppercase tracking-wider ' +
+              'text-[var(--color-ink-muted)] ' +
+              (computed ? 'cursor-default' : 'hover:text-[var(--color-ink)]')
+            }
           >
             {column.stage.label}
           </button>
@@ -161,7 +176,7 @@ export function Column({
             >
               <SortIcon sort={sort} />
             </button>
-            {canDelete && (
+            {canDelete && !computed && (
               <button
                 onPointerDown={stop}
                 onClick={(e) => {
