@@ -1,6 +1,6 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { motion } from 'motion/react'
-import { Link2, Plus } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -10,7 +10,6 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import type { Todo, TodoValues } from '../lib/board'
 import { buildAccountIndex, matchAccount } from '../lib/accountMatch'
@@ -25,6 +24,7 @@ import {
 import type { TodoAccount } from './TodoCard'
 import { AccountChip } from './AccountChip'
 import { KindSlider } from './KindSlider'
+import { NoteEditor } from './NoteEditor'
 
 /** Sentinel for "no account", since a Select cannot carry null as a value. */
 const NO_ACCOUNT = '__none__'
@@ -40,7 +40,7 @@ const NO_ACCOUNT = '__none__'
  */
 const FIELD = 'border-[var(--color-line)] shadow-field dark:shadow-field-dark'
 
-/** The two "add an optional field" buttons under the title. */
+/** The "add the note" button under the title. */
 const reveal =
   'inline-flex items-center gap-1 rounded px-1 py-0.5 text-[11px] font-medium ' +
   'text-[var(--color-ink-faint)] transition-colors hover:text-[var(--color-ink-muted)] ' +
@@ -77,7 +77,7 @@ interface Props {
  *
  * Ordered by how much thought each field costs. The title is the only required
  * one and gets focus; the note is a link until you want it, because most to-dos
- * are a single line and an always-open textarea made the composer look like a
+ * are a single line and an always-open note field made the composer look like a
  * form to fill in rather than a box to type in. The kind pill is last because it
  * has a sensible default and you can leave it alone.
  *
@@ -98,9 +98,14 @@ export function TodoForm({
   const [note, setNote] = useState(initial?.note ?? '')
   /** A to-do that already has a note opens with it showing; there is nothing to reveal. */
   const [noteOpen, setNoteOpen] = useState(Boolean(initial?.note))
+  /*
+   * A whole-to-do link, which is no longer something you can add: a link now
+   * goes in the words that need one, via the note toolbar. The field stays for
+   * to-dos written before that, so the URL on one can still be read and cleared
+   * rather than being stranded on a card with no way to reach it.
+   */
   const [url, setUrl] = useState(initial?.url ?? '')
-  /** Same rule as the note: an existing link opens showing, not hidden behind a button. */
-  const [linkOpen, setLinkOpen] = useState(Boolean(initial?.url))
+  const legacyUrl = Boolean(initial?.url)
   const [bucket, setBucket] = useState(initial?.bucket ?? defaultBucket ?? DEFAULT_BUCKET)
   const [kind, setKind] = useState(initial?.kind ?? DEFAULT_KIND)
   /*
@@ -166,7 +171,6 @@ export function TodoForm({
       setNote('')
       setNoteOpen(false)
       setUrl('')
-      setLinkOpen(false)
     }
   }
 
@@ -193,21 +197,20 @@ export function TodoForm({
       />
 
       {noteOpen && (
-        <Textarea
+        <NoteEditor
           value={note}
-          onChange={(e) => setNote(e.target.value)}
-          onKeyDown={dismissOnEscape}
-          rows={2}
+          onChange={setNote}
+          placeholder="Note"
           // Focused on open, since the only way here is having asked for it.
           // Not on the editing path, where the field is already populated and
           // stealing focus from the title would be wrong.
           autoFocus={!initial?.note}
-          placeholder="Note"
-          className={cn('mt-2 resize-none', FIELD)}
+          onKeyDown={dismissOnEscape}
+          className={cn('mt-2', FIELD)}
         />
       )}
 
-      {linkOpen && (
+      {legacyUrl && (
         <Input
           // Not type="url", which would reject "posthog.com/docs" in the
           // browser's own words before `linkHref` gets to supply the scheme.
@@ -218,32 +221,18 @@ export function TodoForm({
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           onKeyDown={dismissOnEscape}
-          autoFocus={!initial?.url}
           placeholder="https://…"
           aria-label="Link"
           className={cn('mt-2', FIELD)}
         />
       )}
 
-      {/*
-        One row for whichever reveals are still closed, so adding a second
-        optional field did not mean a second lonely button on its own line. Each
-        disappears once opened — the field it reveals is the thing to look at.
-      */}
-      {(!noteOpen || !linkOpen) && (
+      {!noteOpen && (
         <div className="mt-1.5 flex items-center gap-1">
-          {!noteOpen && (
-            <button type="button" onClick={() => setNoteOpen(true)} className={reveal}>
-              <Plus className="h-3 w-3" />
-              Note
-            </button>
-          )}
-          {!linkOpen && (
-            <button type="button" onClick={() => setLinkOpen(true)} className={reveal}>
-              <Link2 className="h-3 w-3" />
-              Link
-            </button>
-          )}
+          <button type="button" onClick={() => setNoteOpen(true)} className={reveal}>
+            <Plus className="h-3 w-3" />
+            Note
+          </button>
         </div>
       )}
 

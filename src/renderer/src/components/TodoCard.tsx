@@ -10,6 +10,7 @@ import type { Todo, TodoValues } from '../lib/board'
 import { useOutsideDismiss } from '../hooks/useOutsideDismiss'
 import { AccountChip } from './AccountChip'
 import { ExternalLink } from './ExternalLink'
+import { FormattedText } from './FormattedText'
 import { GithubMark } from './icons/GithubMark'
 import { TodoForm } from './TodoForm'
 
@@ -91,7 +92,7 @@ export function TodoFace({
         )}
 
         <span className="line-clamp-3 text-[13px] font-semibold leading-snug tracking-tight">
-          {todo.title}
+          <FormattedText text={todo.title} />
         </span>
 
         {/*
@@ -105,7 +106,7 @@ export function TodoFace({
 
         {todo.note && (
           <p className="line-clamp-3 whitespace-pre-wrap text-[11px] leading-snug text-[var(--color-ink-faint)]">
-            {todo.note}
+            <FormattedText text={todo.note} />
           </p>
         )}
       </div>

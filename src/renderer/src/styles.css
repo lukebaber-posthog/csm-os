@@ -282,3 +282,31 @@ body {
 .titlebar-drag a {
   -webkit-app-region: no-drag;
 }
+
+/*
+ * The note editor.
+ *
+ * ProseMirror renders into a plain contenteditable, so the few things a
+ * textarea gave for free have to be said here. Kept to four rules: everything
+ * else about how the dialect looks lives in `lib/noteStyles`, shared with the
+ * card so a note reads the same while it is being written as after it is saved.
+ */
+.ProseMirror p {
+  /* Lines, not paragraphs. Enter is a newline in the stored text, so it must
+     not open up a paragraph gap the saved note will not have. */
+  margin: 0;
+}
+
+/* An empty paragraph would collapse to zero height and take the caret with it. */
+.ProseMirror p:empty::after {
+  content: '';
+  display: inline-block;
+}
+
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--color-ink-faint);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}

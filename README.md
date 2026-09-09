@@ -536,6 +536,9 @@ src/
                          for the to-do composer), layouts, colours, channels
                          (where a contact lives), touchChannels (how one outreach
                          went out), links (linkHref — typed text to a safe href),
+                         noteMarkup (the note dialect + parser), noteDoc (dialect
+                         <-> editor document), noteEditor (the editor's schema),
+                         noteStyles (how the dialect looks, shared),
                          formatters, cn(), segmented (the shared pill recipe)
     hooks/               useBoard (board state machine), useTodos (the to-do
                          board), useTouchLog (one account's outreach log),
@@ -547,7 +550,8 @@ src/
                          toggle, toggle-group) plus hand-rolled Notice, Spinner
       icons/             GithubMark — inline so it can take currentColor
                        To-dos: ViewSlider, KindSlider, TodoBoard, TodoColumn,
-                         TodoCard, TodoForm, CompleteZone, CompletionFxLayer,
+                         TodoCard, TodoForm, NoteEditor, NoteToolbar,
+                         FormattedText, CompleteZone, CompletionFxLayer,
                          completionEffects, CompletionUndo, SettingsDialog
 ```
 
@@ -567,17 +571,32 @@ the completion rail is a different component, so "not on Done" needs no special
 case. Right-clicking a card or the open composer leaves the native menu alone, so
 cut/copy/paste still works inside the fields.
 
-The composer asks for a title first and only a title. **The note and the link are
-buttons with a `+` on them** until you want one: most to-dos are a single line, and
-always-open fields made the composer look like a form to fill in rather than a box
-to type in. Each button disappears once its field is open, and editing a to-do that
-already has a note or a link opens with them showing.
+The composer asks for a title first and only a title. **The note is a button with
+a `+` on it** until you want one: most to-dos are a single line, and an
+always-open field made the composer look like a form to fill in rather than a box
+to type in. The button disappears once the field is open, and editing a to-do
+that already has a note opens with it showing.
 
-**A to-do can carry a link** — the pull request it is about, the dashboard to
-check, the doc to read. Once saved it shows on the card as a hyperlink that opens
-in your browser, and clicking it neither opens the card's editor nor starts a
-drag. You can leave the scheme off: `posthog.com/docs` is stored as typed and
-linked as `https://posthog.com/docs`.
+**The note field shows formatting, not markup.** Bold text is bold as you type
+it, and typing `**it**` turns into **it** the moment you close the pair — the
+same for `*italic*`, `++underline++`, `` `code` `` and `[label](url)`. The
+toolbar under the field does the same job by button, and each button lights up
+when that mark is on at the caret. Nothing you write is stored differently for
+it: the note is still the plain text on the card, just no longer the only way to
+see what it will look like.
+
+**A link goes on the words that need one.** Select some text in the note, press
+the toolbar's link button, and the URL wraps it as `[text](url)` — so a to-do can
+point at the pull request it is about, the dashboard to check and the doc to read
+without three anonymous URLs stacked under the title. With nothing selected the
+URL becomes its own label, which is the whole-to-do link this replaced. On the
+card it renders as a hyperlink that opens in your browser, and clicking it neither
+opens the card's editor nor starts a drag. You can leave the scheme off:
+`posthog.com/docs` is stored as typed and linked as `https://posthog.com/docs`.
+
+A to-do written before this still has its own `url`, and its editor still shows
+the field so it can be read or cleared — there is just no longer a way to add
+another.
 
 **There is no Cancel button.** Clicking away closes the composer, and Escape does
 the same from either text field. Choosing an account does *not* count as clicking
@@ -838,6 +857,121 @@ had deliberately left where it was.
   needs, and the rehoming RPC — and a fixed three-column board would spend its
   life suppressing all of it. A CHECK enum plus a const array and an `isX()`
   guard is already the house pattern (`board_cards.color`, `touches.channel`).
+- To-do titles and notes are written in a **small markup dialect**
+  (`lib/noteMarkup`, painted by `components/FormattedText`): code, link, bold,
+  italic, underline and colour. The note field carries a toolbar for all six
+  (`components/NoteToolbar`).
+- **The note field is a WYSIWYG editor** (`components/NoteEditor`, TipTap over
+  ProseMirror). Bold text is bold in the field, and typing `**it**` converts on
+  the closing asterisk — a textarea could never be this, since it renders one
+  font and the only way to see the result was to save. The dependency buys a
+  document model, input rules, undo and paste handling; hand-rolling a
+  contenteditable would have meant writing all four, and getting undo wrong is
+  the kind of bug you cannot apologise your way out of.
+- **The dialect is still the storage format.** `lib/noteDoc` parses it into a
+  ProseMirror document on the way in and serialises it back on the way out, so
+  `todos.note` holds the same plain string it always did — greppable, readable in
+  the weekly export, painted on cards by the same `FormattedText`. Swapping the
+  field was not a data migration, and every note already written opens formatted.
+  Verified: the one multi-paragraph note in the database round-trips byte for
+  byte.
+- The schema is assembled from single extensions rather than StarterKit, because
+  what a note *may contain* is the point: no headings, lists, quotes, code blocks
+  or rules. Each of those would be a construct the dialect cannot store and
+  `FormattedText` cannot paint — silently lost on save. Leaving them out of the
+  schema means they cannot be typed, pasted or dragged in.
+- Serialisation has to choose a nesting order, since ProseMirror holds marks as
+  an unordered set per character while `[**x**](url)` and `**[x](url)**` are
+  different strings. `lib/noteDoc` ranks them (link, colour, bold, italic,
+  underline, code) so the same document always produces the same text — otherwise
+  opening a note and closing it would rewrite it. The one visible effect is that
+  `{blue|[x](u)}` normalises to `[{blue|x}](u)`, which renders identically and is
+  then stable.
+- Marks are **shrunk off their own whitespace** on the way out. Select "ship it "
+  with the trailing space, press bold, and ProseMirror marks the space too — but
+  `**ship it **` does not parse back, so the bold would return as literal
+  asterisks on the card. The span narrows to its own content, which is what the
+  selection meant.
+- Bold and italic have their **underscore input rules removed**. TipTap ships
+  `__text__` and `_text_` next to the asterisk forms, and the dialect's founding
+  rule is that an underscore is never a delimiter — because `$set_once` is the
+  sort of thing this app gets used to write about.
+- Link input goes through a hand-written rule, not `markInputRule`, which keeps
+  the *last* capture group as the text — the URL, in `[label](url)`. The generic
+  helper would have left the address on screen and hidden the label.
+- The editor never navigates: `openOnClick: false`. This is an Electron renderer
+  on the app's own origin, so following a link in place would replace the app
+  with a web page and there is no way back. Links are for clicking when *reading*
+  a note, and there they go through `ExternalLink` to the real browser.
+- It is **not markdown, and deliberately a near-miss**. Real markdown fails on
+  this content immediately: `$set_once` contains an underscore pair, so a
+  markdown renderer italicises the middle of a PostHog property name. So italic
+  is asterisk-only and underscores are never a delimiter anywhere; underline is
+  `++doubled++` because markdown has no underline and a lone `+` appears in
+  ordinary arithmetic; colour is `{blue|text}`, which markdown cannot express at
+  all, in braces rather than raw HTML so nothing typed is interpreted by the
+  browser. The one borrowing is `[text](url)`: a bracketed run followed with no
+  gap by a parenthesised one is not a shape that turns up in a note by accident.
+- The emphasis rules require a **non-space against the inside of each
+  delimiter**, as markdown does and for the same reason: without it `2 * 3 * 4`
+  is italic from the first asterisk to the second. `***x***` gets its own rule
+  ahead of the other two, because it is what both marks on one run serialise to
+  and neither of them can read it — CommonMark carries the same special case.
+- A link's URL half stops at whitespace or `)`, so an unclosed `(` cannot run off
+  into the rest of the note. The toolbar percent-encodes both on the way in,
+  which is what lets the pattern stay that strict. The label is parsed on, so a
+  link can also be bold or coloured.
+- Links render through **`ExternalLink`**, not a bare `<a>` — the same component
+  the outreach log uses, so the http(s)-only rule in `linkHref` and the
+  `target="_blank"` that hands the URL to the real browser cannot end up weaker
+  in a note than in a touch. Its `inline` variant inherits colour and marks
+  itself with an underline alone, which suits a UI whose hierarchy is weight and
+  spacing rather than hue.
+- The colour picker offers **six**, not the palette's seven and not the ten it
+  started as. Ten put three near-duplicate pairs on screen and made the swatches
+  a grid to read rather than a row to point at. The *parser* still accepts any
+  card hue, so trimming the picker changed what you can write next rather than
+  turning `{pink|…}` in an existing note into visible braces.
+- The colour trigger is a plain grey circle that **fills with the colour once one
+  is picked**. It was a conic gradient of every swatch, which said "colours" but
+  at 14px read as a smudge and never showed which one was in use.
+- Both drop-downs are anchored on the **toolbar**, not on their own trigger, and
+  only one can be open at a time. A column is `min-w-[188px]` and scrolls, so it
+  clips horizontally: a panel hung off the fifth button along would open past the
+  right edge and be cut in half.
+- The link field calls `preventDefault` on Enter. It lives inside the composer's
+  `<form>`, where Enter in a text input submits — so without it, adding a link
+  would save the to-do instead. Escape is caught there too rather than bubbling
+  to the note field, whose own handler closes the whole composer.
+- Rule order is load-bearing twice. `code` is first, so a snippet containing `**`
+  renders those asterisks instead of going bold. `bold` precedes `italic`, or
+  `**x**` matches the italic rule first and leaves a stray asterisk each side.
+  Every pattern refuses to cross a newline and requires content, so an unclosed
+  delimiter stays the literal character it is rather than swallowing the rest of
+  a note. Verified against unmatched, empty, nested, multi-line, `snake_case` and
+  `2 + 2 + 3` inputs.
+- Toolbar buttons toggle the mark on the selection and **light up when it is on
+  at the caret** — which the textarea version could not do, because a selection
+  in plain text has no formatting to report. Pressing one with nothing selected
+  arms the mark for what comes next, as in any editor.
+- `ui/textarea` had to be wrapped in `forwardRef`. shadcn's current source targets
+  React 19, where `ref` is an ordinary prop; this project is on React 18, where
+  React strips it before the component sees it. `<Textarea ref={…}>` type-checked,
+  rendered, and left the ref null. Found when the old toolbar needed the node to
+  read its selection; the next ref put on a textarea would have hit the same
+  silence.
+- The code chip and the inline link keep their class lists in `lib/noteStyles`,
+  shared by `FormattedText` and the editor. That is the mechanism rather than a
+  tidiness measure: the whole point of the editor is that a note looks the same
+  while it is being typed as after it is saved, and two copies of a class list
+  drift. Tailwind v4 scans `.ts` sources, so the classes are generated as if they
+  were written inline.
+- The chip is sized in `em`, not pixels, so one value serves a 13px card title,
+  an 11px note and a 12px completed-list row. Its background is an ink wash with
+  a `ring`, not `--color-surface`: surface was #fafafa on a white card, a
+  one-step difference that vanished at 11px, and in dark mode it is *darker* than
+  the card so the chip read as a hole. A ring rather than a border because a ring
+  is a box-shadow and adds no layout inside line-clamped text.
 - `todos.kind` and `todos.org_id` are only meaningful together: an `org_id` on a
   `pr` or `other` row is stale data, and it is not cosmetic — `TodoFace` renders
   the account chip off `org_id`, so such a card would wear a customer's logo.
