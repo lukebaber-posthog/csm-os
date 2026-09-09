@@ -25,6 +25,7 @@ import type { Column as ColumnModel } from '../hooks/useBoard'
 import { useCardDrag } from '../hooks/useCardDrag'
 import type { CardColor } from '../lib/colors'
 import type { ContactChannel } from '../lib/channels'
+import type { ColumnSort } from '../lib/columnSort'
 import { DROP_ANIM } from '../lib/motion'
 import { Column, COLUMN_PREFIX, STAGE_PREFIX } from './Column'
 import { CardFace } from './AccountCard'
@@ -51,6 +52,9 @@ interface Props {
   computed: boolean
   /** Asked for when a card is dropped into a different cadence column. */
   onRequestTouch: (orgId: string, toStageKey: string) => void
+  /** How each column orders its cards. `columns` arrives already in that order. */
+  sortOf: (stageKey: string) => ColumnSort
+  onCycleSort: (stageKey: string) => void
 }
 
 /**
@@ -91,7 +95,9 @@ export function Board({
   canAddColumn,
   canDeleteColumn,
   computed,
-  onRequestTouch
+  onRequestTouch,
+  sortOf,
+  onCycleSort
 }: Props) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [activeType, setActiveType] = useState<'card' | 'column' | null>(null)
@@ -227,6 +233,20 @@ export function Board({
     const target = stageOf(overId)
     if (!target) return
 
+    const from = columns.find((c) => c.cards.some((card) => card.account.orgId === orgId))
+
+    /*
+     * A sorted column has no insertion point: the comparator decides where a card
+     * sits, not where you let go of it. So dropping inside one is a no-op, and a
+     * card arriving from another column goes to the end of the stored hand order
+     * — which keeps that order coherent for when the sort is turned back off.
+     */
+    if (sortOf(target.stage.key) !== 'manual') {
+      if (from?.stage.key === target.stage.key) return
+      onMove(orgId, target.stage.key, target.cards.length)
+      return
+    }
+
     // Insertion index is the over-card's index in the target column's full
     // list, which matches dnd-kit's own arrayMove semantics in both directions.
     const index = overId.startsWith(STAGE_PREFIX)
@@ -234,10 +254,9 @@ export function Board({
       : target.cards.findIndex((c) => c.account.orgId === overId)
     if (index < 0) return
 
-    const current = columns.find((c) => c.cards.some((card) => card.account.orgId === orgId))
-    const currentIndex = current?.cards.findIndex((c) => c.account.orgId === orgId) ?? -1
+    const currentIndex = from?.cards.findIndex((c) => c.account.orgId === orgId) ?? -1
     // Nothing to persist when the card was dropped exactly where it started.
-    if (current?.stage.key === target.stage.key && currentIndex === index) return
+    if (from?.stage.key === target.stage.key && currentIndex === index) return
 
     onMove(orgId, target.stage.key, index)
   }
@@ -273,6 +292,8 @@ export function Board({
               onDelete={onDeleteColumn}
               canDelete={canDeleteColumn}
               computed={computed}
+              sort={sortOf(column.stage.key)}
+              onCycleSort={onCycleSort}
               landedId={landedId}
               isActiveTarget={activeType === 'card' && targetStage === column.stage.key}
             />
