@@ -1350,3 +1350,85 @@ adjacent columns, away from the container edges.
   Zendesk tickets
 - Per-column WIP limits, and a colour on the column itself
 - Reorder the layouts, and let a layout be created from the UI rather than code
+
+## The core package and the MCP server
+
+- `src/core` exists because two processes need the same answers. The renderer
+  and the MCP server both read and write the same board, and the rules that make
+  a write correct are not in the schema — they are in code. Splitting them would
+  mean the agent and the UI could disagree about what a valid row looks like.
+- **It was almost free to extract.** `board.ts` had no browser APIs — no
+  `localStorage`, no `window`, no `document` — and every function already took
+  `email` explicitly. The only tie to the renderer was one import of a Supabase
+  client built from `import.meta.env`. That client is now injected
+  (`core/supabase.ts`), and nothing else in the file changed.
+- The renderer's `lib/board`, `lib/layouts`, `lib/todos`, `lib/accountMatch` and
+  `lib/touchChannels` are re-export barrels onto core rather than moved imports.
+  Fifteen call sites keep working untouched, and `lib/board` additionally
+  imports `./supabase` for its side effect, which is what guarantees the client
+  is registered before any component can reach a query.
+- `lib/colors` and `lib/channels` are split rather than moved: the palette and
+  the channel enum are data, but `cardSurfaceStyle` returns a React
+  `CSSProperties` and the channel marks are imported SVGs. Only a bundler can
+  produce the second kind.
+- **`tsconfig.mcp.json` has no `DOM` lib, and that is the enforcement.** Core is
+  compiled by both the web project and the MCP project, so the day someone
+  reaches for `localStorage` in there, the MCP typecheck fails and says so.
+
+### Three invariants were living in the wrong place
+
+Each of these was correct only because a single call site remembered to apply
+it. Moving them next to the query is what makes a second caller safe:
+
+- `normalizeTodoValues` was applied in `useTodos`. A `pr` or `other` to-do that
+  kept its `org_id` renders wearing a customer's logo. Now applied inside
+  `addTodo` and `updateTodo`.
+- `normalizeTouchValues` was applied in `useTouchLog` and `CadenceTouchDialog`.
+  A non-`link` touch that kept a url renders a clickable anchor on a phone call.
+  Now applied inside `addTouch` and `updateTouch`.
+- `freeSlot` and the sibling-exclusion rule were in `useTodos`. Both are now
+  `todoPositionFor`, beside `accountPositionFor`, so an agent places a card by
+  the same arithmetic as a drag.
+
+A fourth turned up during testing rather than review: `loadStages` reads
+`board_stages`, but a computed layout's columns come from `lib/layouts`, and
+`useBoard` knew that inline while the MCP server did not. `board_stages` still
+holds the cadence rows from before that layout became computed, so
+`list_layouts` cheerfully reported columns named "Overdue" and "Due Soon" that
+appear nowhere in the app. `loadColumns` is now the one way to ask.
+
+### Why the server talks to Supabase rather than to the app
+
+Driving the running Electron app over a socket would update the UI directly, but
+the business logic lives in React hooks that are state machines — reaching them
+from outside means either exposing a command per hook or replaying user
+gestures, and it only works while the app is open. Going straight to Supabase
+needs no keychain access and no PostHog key: the account book is read from the
+cache the main process writes on every sync, which is the same route the dev
+browser bridge takes, for the same reason.
+
+The cost is that the book is only as fresh as the last sync in the app. Names,
+domains and ARR move on the order of weeks, so that is the cheaper side of the
+trade than a second copy of the PostHog credentials on disk.
+
+`CSM_EMAIL` is configuration and never a tool argument. RLS here is permissive
+and scoped by `csm_email`, so a tool that accepted an email would let a prompt
+write to a colleague's board.
+
+### Realtime, and the two things it needs from the database
+
+An open board used to see only its own writes, which made agent-driven changes
+invisible until a manual sync — and left the board holding stale positions, so
+the next drag would midpoint against numbers that had already moved.
+`useSupabaseSync` subscribes to the five board tables and **refetches** rather
+than merging the payload: both boards are optimistic, so merging would mean
+reconciling an echo of your own change against the version already on screen,
+for every table, forever.
+
+Two migrations were needed, both reversible:
+
+- The tables had to join the `supabase_realtime` publication.
+- They needed `replica identity full`. A `DELETE` otherwise carries only the
+  primary key, so a subscription filtered on `csm_email` never sees one — the
+  column is not in the payload to match against. This showed up as creates
+  arriving live while deletes silently did not.

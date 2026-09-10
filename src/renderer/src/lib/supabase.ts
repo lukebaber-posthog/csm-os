@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { setSupabaseClient } from '../../../core/supabase'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -16,3 +17,12 @@ if (!url || !anonKey) {
 export const supabase = createClient(url, anonKey, {
   auth: { persistSession: false, autoRefreshToken: false }
 })
+
+/**
+ * Hands the client to `src/core`, which holds the queries but cannot build a
+ * client of its own — it is shared with the MCP server, which has no
+ * `import.meta.env` to read. `lib/board` imports this module for the side
+ * effect, so the registration cannot be missed by a caller that only wants a
+ * query.
+ */
+setSupabaseClient(supabase)

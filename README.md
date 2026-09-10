@@ -125,6 +125,32 @@ as you pick a card up and glows green when you're over it. Nothing is deleted:
 something sets off confetti. There's a Mega Confetti toggle in Settings if the
 default isn't enough.
 
+### Driving it from Claude Code
+
+There's an MCP server, so Claude Code can read and change the board directly:
+"log a Slack touch on Gloo about the export change", "what haven't I touched in
+three weeks", "move Nasuni to Responded", "make a to-do for the LayerZero
+migration".
+
+Build it once, and approve the server the next time you run `claude` in this
+directory:
+
+```bash
+pnpm mcp:build
+```
+
+The server is registered in `.mcp.json`, so it comes with the repo. It needs
+`CSM_EMAIL` in your `.env` alongside the Supabase values — the app learns whose
+board it is from whoever signed in, and the server has no one to ask.
+
+Accounts are addressed by name, so "US Mobile", "usmobile" and the org id all
+find the same account. It talks to Supabase directly, so the desktop app does
+not have to be running; the app does have to have synced at least once, because
+the account book comes from the cache it writes.
+
+**Changes show up in an open board within about a second**, so you can watch it
+work rather than hitting sync afterwards.
+
 ### Elsewhere
 
 Settings has an **Export last 7 days**, which writes a markdown file of every
@@ -139,22 +165,27 @@ unreachable. It says so in the header, and dragging and logging keep working.
 | Script | What it does |
 | --- | --- |
 | `pnpm dev` | Dev server with hot reload, the one you want day to day |
-| `pnpm typecheck` | Both tsconfigs, no emit |
+| `pnpm typecheck` | All three tsconfigs (node, web, mcp), no emit |
 | `pnpm build` | Bundles main, preload and renderer into `out/` |
 | `pnpm start` | Runs the built bundle, needs `pnpm build` first |
 | `pnpm package` | Unpacked macOS `.app` via electron-builder |
+| `pnpm mcp:build` | Bundles the MCP server into `out/mcp/index.js` |
 
 Roughly where things live:
 
 ```
 src/
   shared/types.ts     Types crossing the process boundary
+  core/               Every Supabase query, plus the rules that make a write
+                      correct. Shared by the app and the MCP server, so it must
+                      stay free of React, Vite and Node APIs alike
   main/               Window, menu, IPC, PostHog queries, keychain, cache
   preload/index.ts    The only surface the renderer gets
+  mcp/                The MCP server: tools over src/core
   renderer/src/
-    lib/              Supabase client, board queries, layouts, colours,
-                      channels, the note markup dialect, formatters
-    hooks/            useBoard, useTodos, useTouchLog, useTheme
+    lib/              Doors onto src/core, plus the renderer-only half —
+                      logos, the note markup dialect, formatters
+    hooks/            useBoard, useTodos, useTouchLog, useSupabaseSync
     components/       The two boards and everything in them
       ui/             shadcn primitives, plus hand-rolled Notice and Spinner
 ```
@@ -171,6 +202,11 @@ A few house conventions worth knowing before you start:
   surface, relative paths for this app's own modules.
 - **Tailwind v4 is configured from CSS.** There's no `tailwind.config.js`; the
   design tokens are the `@theme` block in `src/renderer/src/styles.css`.
+- **Queries belong in `src/core`, never in a component or a tool.** The rules
+  that make a write correct live next to the query — dropping the account link
+  from a PR to-do, dropping the url from a call, refusing a placement on a
+  computed layout — so that no caller can route around them by being a
+  different caller. A tool that writes its own SQL is a bug waiting to happen.
 - **Supabase is shared.** Additive changes (a new nullable column, a new table)
   land safely for everyone. Renames and drops break other people's app until they
   pull.

@@ -11,6 +11,7 @@ import { daysSince } from '../lib/format'
 import type { CardColor } from '../lib/colors'
 import type { ContactChannel } from '../lib/channels'
 import {
+  loadColumns,
   loadStages,
   loadPlacements,
   loadCardProps,
@@ -24,7 +25,7 @@ import {
   reorderStages,
   setCardColor,
   setCardChannel,
-  positionFor,
+  accountPositionFor,
   type Placement
 } from '../lib/board'
 
@@ -51,6 +52,8 @@ interface BoardState {
   fromCache: boolean
   accountCount: number
   refresh: () => Promise<void>
+  /** Re-reads placements, columns, touches and card props. Not PostHog. */
+  reloadFromSupabase: () => void
   move: (orgId: string, toStageKey: string, toIndex: number) => Promise<void>
   rename: (stageKey: string, label: string) => Promise<void>
   addColumn: (label: string) => Promise<void>
@@ -84,6 +87,15 @@ export function useBoard(email: string, layoutKey: string): BoardState {
 
   /** Whether this layout's columns come from the data rather than from drops. */
   const computed = layoutDef(layoutKey).computed === true
+
+  /*
+   * Bumped to re-read everything this board derives from Supabase. A counter in
+   * the effect's deps rather than a second copy of the loader: the effect
+   * already knows how to run again — it does so on every layout change — so
+   * this reuses that path instead of adding one that could drift from it.
+   */
+  const [revision, setRevision] = useState(0)
+  const reloadFromSupabase = useCallback(() => setRevision((r) => r + 1), [])
 
   const [loadingAccounts, setLoadingAccounts] = useState(true)
   const [loadingLayout, setLoadingLayout] = useState(true)
@@ -159,8 +171,9 @@ export function useBoard(email: string, layoutKey: string): BoardState {
          * that never reads them back.
          */
         if (computed) {
+          const rule = await loadColumns(email, layoutKey)
           if (cancelled || !alive.current) return
-          setStages(layoutDef(layoutKey).stages.map((st, i) => ({ ...st, position: i })))
+          setStages(rule)
           setPlacements([])
           return
         }
@@ -189,7 +202,7 @@ export function useBoard(email: string, layoutKey: string): BoardState {
     return () => {
       cancelled = true
     }
-  }, [email, layoutKey, accounts, computed])
+  }, [email, layoutKey, accounts, computed, revision])
 
   const columns = useMemo<Column[]>(() => {
     if (computed) {
@@ -249,8 +262,9 @@ export function useBoard(email: string, layoutKey: string): BoardState {
       const target = columns.find((c) => c.stage.key === toStageKey)
       if (!target) return
 
-      const siblings = target.cards.filter((c) => c.account.orgId !== orgId)
-      const position = positionFor(siblings, toIndex)
+      // Shared with the MCP server, so a card placed by an agent lands by the
+      // same arithmetic as one placed by a drag.
+      const position = accountPositionFor(placements, orgId, toStageKey, toIndex)
 
       // Optimistic: the card lands instantly, then we persist.
       const previous = placements
@@ -410,6 +424,7 @@ export function useBoard(email: string, layoutKey: string): BoardState {
     fromCache,
     accountCount: accounts.length,
     refresh,
+    reloadFromSupabase,
     move,
     rename,
     addColumn,

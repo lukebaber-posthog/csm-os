@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useBoard } from '../hooks/useBoard'
+import { useSupabaseSync } from '../hooks/useSupabaseSync'
 import { useTodos } from '../hooks/useTodos'
 import type { Theme } from '../hooks/useTheme'
 import { DEFAULT_LAYOUT, layoutDef } from '../lib/layouts'
@@ -119,6 +120,17 @@ export function BoardScreen({ email, theme, onToggleTheme, onSignOut }: Props) {
    * pill rather than a route.
    */
   const todos = useTodos(email)
+
+  /*
+   * Writes from outside this window — the MCP server, or the same account open
+   * on another machine — land on the board without a manual sync. Deliberately
+   * not `board.refresh()`, which re-queries PostHog: only the Supabase-derived
+   * half has changed, and the account book has not.
+   */
+  useSupabaseSync(email, () => {
+    board.reloadFromSupabase()
+    void todos.reload()
+  })
   const [openOrgId, setOpenOrgId] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [completedOpen, setCompletedOpen] = useState(false)

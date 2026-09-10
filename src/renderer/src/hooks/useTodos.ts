@@ -6,7 +6,7 @@ import {
   loadTodos,
   loadTodosDoneToday,
   moveTodo,
-  positionFor,
+  todoPositionFor,
   uncompleteTodo,
   updateTodo,
   POSITION_STEP,
@@ -57,25 +57,6 @@ function dayStartMs(dayKey: string): number {
   return new Date(`${dayKey}T00:00:00`).getTime()
 }
 
-/**
- * The position a row should take, nudged off anything already occupying it.
- *
- * A completed row keeps its bucket and position so undo can be exact — but
- * `columns` filters it out, so its slot is invisible to the ordering arithmetic
- * and would happily be handed to another card. Undo would then restore two rows
- * at an identical position, and their order would come down to array order rather
- * than to anything the user did. Because `addTodo` steps by exactly
- * POSITION_STEP, that collision is hit dead-on rather than narrowly missed.
- */
-function freeSlot(desired: number, all: Todo[], bucket: TodoBucket, selfId: string): number {
-  const taken = new Set(
-    all.filter((t) => t.bucket === bucket && t.id !== selfId).map((t) => t.position)
-  )
-  let position = desired
-  // Neighbours sit POSITION_STEP apart, so a micro-nudge cannot reorder anything.
-  for (let i = 0; i < 64 && taken.has(position); i++) position += 1e-6
-  return position
-}
 
 /** The tail of a bucket, counting archived rows so a reclaimed slot isn't reused. */
 function tailOf(all: Todo[], bucket: TodoBucket, excludeId?: string): number {
@@ -292,12 +273,10 @@ export function useTodos(email: string): TodoBoardState {
       const before = all.find((t) => t.id === id)
       if (!before) return
 
-      // Siblings must exclude the dragged row, or a same-column drag midpoints
-      // against itself and lands on a duplicate position.
-      const siblings = all
-        .filter((t) => !t.completedAt && t.bucket === toBucket && t.id !== id)
-        .sort((a, b) => a.position - b.position)
-      const position = freeSlot(positionFor(siblings, toIndex), all, toBucket, id)
+      // Excluding the dragged row and nudging clear of a collision both live in
+      // `todoPositionFor`, so the MCP server places a to-do the same way a drag
+      // does rather than reimplementing the arithmetic.
+      const position = todoPositionFor(all, id, toBucket, toIndex)
 
       await commit(
         (prev) => prev.map((t) => (t.id === id ? { ...t, bucket: toBucket, position } : t)),
