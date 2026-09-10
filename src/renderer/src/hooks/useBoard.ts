@@ -95,7 +95,22 @@ export function useBoard(email: string, layoutKey: string): BoardState {
    * this reuses that path instead of adding one that could drift from it.
    */
   const [revision, setRevision] = useState(0)
-  const reloadFromSupabase = useCallback(() => setRevision((r) => r + 1), [])
+
+  /*
+   * Set for the one run a background reload triggers, so it does not raise the
+   * loading flag. `loading` swaps the whole board for a spinner, which is right
+   * when there is nothing to show yet and very wrong when the board is already
+   * on screen — it read as the page flashing and reloading itself.
+   *
+   * Read and cleared at the top of the effect rather than held in state,
+   * because it describes one run rather than a lasting mode: left in state, a
+   * later layout switch would inherit it and lose its spinner.
+   */
+  const quietRun = useRef(false)
+  const reloadFromSupabase = useCallback(() => {
+    quietRun.current = true
+    setRevision((r) => r + 1)
+  }, [])
 
   const [loadingAccounts, setLoadingAccounts] = useState(true)
   const [loadingLayout, setLoadingLayout] = useState(true)
@@ -128,16 +143,9 @@ export function useBoard(email: string, layoutKey: string): BoardState {
         // A board_cards row must exist before a colour or channel can be
         // stored on it.
         await ensureCards(email, fetched)
-        const [cardProps, touchMap] = await Promise.all([
-          loadCardProps(email),
-          loadLastTouches(email)
-        ])
 
         if (!alive.current) return
         setAccounts(fetched)
-        setColors(cardProps.colors)
-        setChannels(cardProps.channels)
-        setLastTouches(touchMap)
         setFetchedAt(at)
         setFromCache(cached)
       } catch (err) {
@@ -161,8 +169,11 @@ export function useBoard(email: string, layoutKey: string): BoardState {
   useEffect(() => {
     let cancelled = false
 
+    const quiet = quietRun.current
+    quietRun.current = false
+
     async function run() {
-      setLoadingLayout(true)
+      if (!quiet) setLoadingLayout(true)
       try {
         /*
          * A computed layout has no rows to fetch. Skipping the round trip is the
@@ -170,18 +181,38 @@ export function useBoard(email: string, layoutKey: string): BoardState {
          * would otherwise write a placement per account per sync for a layout
          * that never reads them back.
          */
+        /*
+         * Colours, channels and last-touch dates are per-account rather than
+         * per-layout, but they are read here because this is the effect a
+         * background reload reruns. On the PostHog path they only refreshed on
+         * a full sync, so a touch or a colour set from outside this window
+         * never reached the board — and on the cadence layout that is not
+         * cosmetic, since the touch dates decide which column a card is in.
+         */
+        const shared = Promise.all([loadCardProps(email), loadLastTouches(email)])
+
         if (computed) {
-          const rule = await loadColumns(email, layoutKey)
+          const [rule, [cardProps, touchMap]] = await Promise.all([
+            loadColumns(email, layoutKey),
+            shared
+          ])
           if (cancelled || !alive.current) return
+          setColors(cardProps.colors)
+          setChannels(cardProps.channels)
+          setLastTouches(touchMap)
           setStages(rule)
           setPlacements([])
           return
         }
 
-        const [stageRows, existing] = await Promise.all([
+        const [stageRows, existing, [cardProps, touchMap]] = await Promise.all([
           loadStages(email, layoutKey),
-          loadPlacements(email, layoutKey)
+          loadPlacements(email, layoutKey),
+          shared
         ])
+        setColors(cardProps.colors)
+        setChannels(cardProps.channels)
+        setLastTouches(touchMap)
         // Reconcile so accounts new to this layout get a card immediately.
         const reconciled = accounts.length
           ? await reconcilePlacements(email, layoutKey, accounts, existing)
@@ -194,7 +225,7 @@ export function useBoard(email: string, layoutKey: string): BoardState {
         if (cancelled || !alive.current) return
         setError(err instanceof Error ? err.message : 'Could not load the board.')
       } finally {
-        if (!cancelled && alive.current) setLoadingLayout(false)
+        if (!cancelled && alive.current && !quiet) setLoadingLayout(false)
       }
     }
 

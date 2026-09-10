@@ -1432,3 +1432,48 @@ Two migrations were needed, both reversible:
   primary key, so a subscription filtered on `csm_email` never sees one — the
   column is not in the payload to match against. This showed up as creates
   arriving live while deletes silently did not.
+
+### The flash: two bugs behind one symptom
+
+Shipping realtime made every drag flash the whole board and appear to reload.
+Two separate faults, and the second was hiding behind the first.
+
+**A background reload must not raise the loading flag.** `loading` swaps the
+board for a spinner, which is right when there is nothing to show yet and wrong
+when the board is already on screen. `useBoard` sets it at the top of the layout
+effect and `useTodos.load` at the top of its own, so a realtime-triggered reload
+went through the same "first paint" path as a cold start. Now a quiet run skips
+the flag: `useBoard` reads a one-shot ref (state would leak the mode into a later
+layout switch and lose its spinner), and `useTodos` has `revalidate()` beside
+`reload()`.
+
+**And the reload should not have happened at all.** A `postgres_changes` payload
+says what changed, never who changed it, so an app that reloads on every event
+spends its time reloading in response to itself. Every mutating query in
+`core/board.ts` now goes through `write()` instead of `db()`, which notes the
+time; `useSupabaseSync` defers while that is recent. Deferring rather than
+dropping matters: a genuinely remote change arriving mid-drag still lands, once
+things are quiet. Without it there was also a race — a second drag inside the
+window would be refetched away and then reinstated by its own echo, so a card
+visibly jumped back.
+
+Only 22 of the 34 exported functions mutate, and several read first and seed only
+when empty (`loadLayouts`, `loadStages`), so the conversion is per statement
+rather than per function. Marking a SELECT as a write would keep the quiet window
+permanently hot.
+
+### What that flash was hiding
+
+Chasing it turned up a worse bug in the same feature: `loadCardProps` and
+`loadLastTouches` were only called inside `loadAccounts`, which is the PostHog
+sync path. A background reload reruns the layout effect and never that, so
+colours, contact channels and last-touch dates never refreshed from outside the
+window. On the cadence layout that is not cosmetic — the touch dates decide which
+column a card is in, so an MCP-logged touch left the card where it was. They are
+read with the layout now.
+
+It survived the original testing because that testing used a to-do, which comes
+through `useTodos` and did refresh. Verifying that the data arrives is not the
+same as verifying that it arrives everywhere, or pleasantly: the spinner flash
+was present in those first tests too, and counting cards in the DOM could not see
+it.

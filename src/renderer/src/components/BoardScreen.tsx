@@ -129,7 +129,7 @@ export function BoardScreen({ email, theme, onToggleTheme, onSignOut }: Props) {
    */
   useSupabaseSync(email, () => {
     board.reloadFromSupabase()
-    void todos.reload()
+    void todos.revalidate()
   })
   const [openOrgId, setOpenOrgId] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)

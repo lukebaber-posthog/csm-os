@@ -1,4 +1,4 @@
-import { db } from './supabase'
+import { db, write } from './supabase'
 import { LAYOUTS, intakeStageOf, layoutDef, type Layout, type Stage } from './layouts'
 import { isCardColor, type CardColor } from './colors'
 import { isContactChannel, type ContactChannel } from './channels'
@@ -178,7 +178,7 @@ export async function loadColumns(email: string, layoutKey: string): Promise<Sta
  * than a read to decide whether to write.
  */
 export async function registerUser(email: string): Promise<void> {
-  const { error } = await db()
+  const { error } = await write()
     .from('csm_users')
     .upsert({ email }, { onConflict: 'email', ignoreDuplicates: true })
   fail('Could not sign you in', error)
@@ -203,7 +203,7 @@ export async function loadLayouts(email: string): Promise<Layout[]> {
     label: l.label,
     position: i
   }))
-  const { error: seedError } = await db().from('board_layouts').insert(seeded)
+  const { error: seedError } = await write().from('board_layouts').insert(seeded)
   fail('Could not create default layouts', seedError)
   return seeded.map(({ key, label, position }) => ({ key, label, position }))
 }
@@ -219,7 +219,7 @@ export async function loadActiveLayout(email: string): Promise<string> {
 }
 
 export async function setActiveLayout(email: string, layoutKey: string): Promise<void> {
-  const { error } = await db()
+  const { error } = await write()
     .from('csm_users')
     .update({ active_layout: layoutKey })
     .eq('email', email)
@@ -247,7 +247,7 @@ export async function loadStages(email: string, layoutKey: string): Promise<Stag
     label: s.label,
     position: i
   }))
-  const { error: seedError } = await db().from('board_stages').insert(seeded)
+  const { error: seedError } = await write().from('board_stages').insert(seeded)
   fail('Could not create default columns', seedError)
   return seeded.map(({ key, label, position }) => ({ key, label, position }))
 }
@@ -258,7 +258,7 @@ export async function renameStage(
   key: string,
   label: string
 ): Promise<void> {
-  const { error } = await db()
+  const { error } = await write()
     .from('board_stages')
     .update({ label })
     .eq('csm_email', email)
@@ -297,7 +297,7 @@ export async function addStage(
   const key = uniqueKey(slugify(trimmed), new Set(existing.map((s) => s.key)))
   const position = existing.reduce((max, s) => Math.max(max, s.position), -1) + 1
 
-  const { error } = await db().from('board_stages').insert({
+  const { error } = await write().from('board_stages').insert({
     csm_email: email,
     layout_key: layoutKey,
     key,
@@ -318,7 +318,7 @@ export async function reorderStages(
   layoutKey: string,
   orderedKeys: string[]
 ): Promise<void> {
-  const { error } = await db().rpc('reorder_board_stages', {
+  const { error } = await write().rpc('reorder_board_stages', {
     p_email: email,
     p_layout: layoutKey,
     p_keys: orderedKeys
@@ -332,7 +332,7 @@ export async function deleteStage(
   layoutKey: string,
   key: string
 ): Promise<void> {
-  const { error } = await db().rpc('delete_board_stage', {
+  const { error } = await write().rpc('delete_board_stage', {
     p_email: email,
     p_layout: layoutKey,
     p_key: key
@@ -353,7 +353,7 @@ export async function ensureCards(email: string, accounts: Account[]): Promise<v
     org_id: a.orgId,
     org_name: a.orgName
   }))
-  const { error } = await db()
+  const { error } = await write()
     .from('board_cards')
     .upsert(rows, { onConflict: 'csm_email,org_id', ignoreDuplicates: true })
   fail('Could not register accounts', error)
@@ -385,7 +385,7 @@ export async function setCardColor(
   orgId: string,
   color: CardColor | null
 ): Promise<void> {
-  const { error } = await db()
+  const { error } = await write()
     .from('board_cards')
     .update({ color, updated_at: new Date().toISOString() })
     .eq('csm_email', email)
@@ -399,7 +399,7 @@ export async function setCardChannel(
   orgId: string,
   channel: ContactChannel | null
 ): Promise<void> {
-  const { error } = await db()
+  const { error } = await write()
     .from('board_cards')
     .update({ contact_channel: channel, updated_at: new Date().toISOString() })
     .eq('csm_email', email)
@@ -452,7 +452,7 @@ export async function reconcilePlacements(
     position: tail + (i + 1) * POSITION_STEP
   }))
 
-  const { error } = await db()
+  const { error } = await write()
     .from('board_placements')
     .upsert(rows, { onConflict: 'csm_email,layout_key,org_id', ignoreDuplicates: true })
   fail('Could not add new accounts to the board', error)
@@ -470,7 +470,7 @@ export async function movePlacement(
   stageKey: string,
   position: number
 ): Promise<void> {
-  const { error } = await db()
+  const { error } = await write()
     .from('board_placements')
     .update({ stage_key: stageKey, position, updated_at: new Date().toISOString() })
     .eq('csm_email', email)
@@ -527,7 +527,7 @@ export async function addTouch(
   // Normalised here rather than at the call site, so no caller can hang a URL
   // on a channel that has no business carrying one. See `normalizeTouchValues`.
   const values = normalizeTouchValues(raw)
-  const { error } = await db().from('touches').insert({
+  const { error } = await write().from('touches').insert({
     csm_email: email,
     org_id: orgId,
     channel: values.channel,
@@ -541,7 +541,7 @@ export async function addTouch(
 /** Rewrites an existing touch. The account it belongs to never changes. */
 export async function updateTouch(id: string, raw: TouchValues): Promise<void> {
   const values = normalizeTouchValues(raw)
-  const { error } = await db()
+  const { error } = await write()
     .from('touches')
     .update({
       channel: values.channel,
@@ -557,7 +557,7 @@ export async function updateTouch(id: string, raw: TouchValues): Promise<void> {
 }
 
 export async function deleteTouch(id: string): Promise<void> {
-  const { error } = await db().from('touches').delete().eq('id', id)
+  const { error } = await write().from('touches').delete().eq('id', id)
   fail('Could not delete the touch', error)
 }
 
@@ -753,7 +753,7 @@ export async function addTodo(
     .filter((t) => t.bucket === values.bucket)
     .reduce((max, t) => Math.max(max, t.position), 0)
 
-  const { data, error } = await db()
+  const { data, error } = await write()
     .from('todos')
     .insert({
       csm_email: email,
@@ -783,7 +783,7 @@ export async function updateTodo(
   position: number
 ): Promise<void> {
   const values = normalizeTodoValues(raw)
-  const { error } = await db()
+  const { error } = await write()
     .from('todos')
     .update({
       title: values.title.trim(),
@@ -809,7 +809,7 @@ export async function moveTodo(
   bucket: TodoBucket,
   position: number
 ): Promise<void> {
-  const { error } = await db()
+  const { error } = await write()
     .from('todos')
     .update({ bucket, position, updated_at: new Date().toISOString() })
     .eq('csm_email', email)
@@ -827,7 +827,7 @@ export async function completeTodo(
   id: string,
   completedAt: string
 ): Promise<void> {
-  const { error } = await db()
+  const { error } = await write()
     .from('todos')
     .update({ completed_at: completedAt, updated_at: new Date().toISOString() })
     .eq('csm_email', email)
@@ -837,7 +837,7 @@ export async function completeTodo(
 
 /** Restores a completed to-do to the slot it left. */
 export async function uncompleteTodo(email: string, id: string): Promise<void> {
-  const { error } = await db()
+  const { error } = await write()
     .from('todos')
     .update({ completed_at: null, updated_at: new Date().toISOString() })
     .eq('csm_email', email)
@@ -846,7 +846,7 @@ export async function uncompleteTodo(email: string, id: string): Promise<void> {
 }
 
 export async function deleteTodo(email: string, id: string): Promise<void> {
-  const { error } = await db()
+  const { error } = await write()
     .from('todos')
     .delete()
     .eq('csm_email', email)

@@ -35,3 +35,26 @@ export function db(): SupabaseClient {
   }
   return client
 }
+
+let lastWriteAt = 0
+
+/**
+ * The same client, noting that this process is about to change something.
+ *
+ * Every mutating query in `board.ts` goes through this rather than `db()`, so
+ * that a realtime subscriber can tell its own writes from someone else's. It
+ * cannot ask the subscription: a `postgres_changes` payload says what changed,
+ * never who changed it, so an app that reloads on every event spends the whole
+ * time reloading in response to itself.
+ *
+ * A no-op anywhere nothing is subscribed, which is the MCP server's case.
+ */
+export function write(): SupabaseClient {
+  lastWriteAt = Date.now()
+  return db()
+}
+
+/** Milliseconds since this process last wrote, or Infinity if it never has. */
+export function msSinceLocalWrite(): number {
+  return lastWriteAt === 0 ? Infinity : Date.now() - lastWriteAt
+}

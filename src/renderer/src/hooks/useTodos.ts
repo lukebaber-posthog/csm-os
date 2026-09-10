@@ -38,6 +38,8 @@ export interface TodoBoardState {
   error: string | null
   /** Re-reads everything. The only way back from a failed initial load. */
   reload: () => Promise<void>
+  /** The same, without the spinner — for a reload the user did not ask for. */
+  revalidate: () => Promise<void>
   add: (values: TodoValues) => Promise<boolean>
   save: (id: string, values: TodoValues) => Promise<boolean>
   move: (id: string, toBucket: TodoBucket, toIndex: number) => Promise<void>
@@ -124,8 +126,13 @@ export function useTodos(email: string): TodoBoardState {
     setTodos(todosRef.current)
   }, [])
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  /**
+   * `quiet` re-reads without raising the loading flag, which would otherwise
+   * replace the board with a spinner. Right for the first load, wrong for a
+   * background one where the to-dos are already on screen.
+   */
+  const load = useCallback(async (quiet = false) => {
+    if (!quiet) setLoading(true)
     setError(null)
     try {
       const from = new Date(dayStartMs(todayInput())).toISOString()
@@ -139,7 +146,7 @@ export function useTodos(email: string): TodoBoardState {
       if (!alive.current) return
       setError(err instanceof Error ? err.message : 'Could not load your to-dos.')
     } finally {
-      if (alive.current) setLoading(false)
+      if (alive.current && !quiet) setLoading(false)
     }
   }, [applyTodos, email])
 
@@ -366,7 +373,8 @@ export function useTodos(email: string): TodoBoardState {
     openCount,
     loading,
     error,
-    reload: load,
+    reload: () => load(),
+    revalidate: () => load(true),
     add,
     save,
     move,
