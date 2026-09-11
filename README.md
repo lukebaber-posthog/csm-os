@@ -106,7 +106,8 @@ URL and renders it as a hyperlink on the entry.
 in the middle of the screen, typing narrows the book, and Enter opens the top
 match's panel — the same panel clicking its card opens. Arrow keys move down the
 list if the one you want isn't first. It works in both layouts, and matching is
-forgiving: "us mob", "usmobile" and "bootd" all land where you'd expect.
+forgiving about spacing, punctuation and case — "north wind", "northwind" and
+"nwind" all land on the same account.
 
 ### The to-do board
 
@@ -134,8 +135,8 @@ default isn't enough.
 ### Driving it from Claude Code
 
 There's an MCP server, so Claude Code can read and change the board directly:
-"log a Slack touch on Gloo about the export change", "what haven't I touched in
-three weeks", "move Nasuni to Responded", "make a to-do for the LayerZero
+"log a Slack touch on Contoso about the export change", "what haven't I touched
+in three weeks", "move Northwind to Responded", "make a to-do for the Fabrikam
 migration".
 
 Build it once, and approve the server the next time you run `claude` in this
@@ -149,7 +150,7 @@ The server is registered in `.mcp.json`, so it comes with the repo. It needs
 `CSM_EMAIL` in your `.env` alongside the Supabase values — the app learns whose
 board it is from whoever signed in, and the server has no one to ask.
 
-Accounts are addressed by name, so "US Mobile", "usmobile" and the org id all
+Accounts are addressed by name, so "North Wind", "northwind" and the org id all
 find the same account. It talks to Supabase directly, so the desktop app does
 not have to be running; the app does have to have synced at least once, because
 the account book comes from the cache it writes.

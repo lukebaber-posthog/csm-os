@@ -196,9 +196,9 @@ them purely as an overlay signs in fine and gets an empty board.
 
 **`is_tam_overlay` is gone.** Vitally carried it as a 0/1 flag on the CSM's row
 meaning "this account also has a TAM", and it had no native equivalent — no TAM
-role exists, and Account executive does not stand in for it (Cline Bot and Wispr
-AI carry the flag, but so does USMobile, which does not). It covered 2 of 31
-accounts. Restoring it properly means creating a TAM relationship definition in
+role exists, and Account executive does not stand in for it — two accounts carry
+the flag and are account-executive-held, but so is a third that does not carry it.
+It covered 2 of 31 accounts. Restoring it properly means creating a TAM relationship definition in
 Customer Analytics and assigning it.
 
 **`segment` is now a literal.** Vitally's value was `CSM Managed` for every row
@@ -212,17 +212,18 @@ rather than growing a hole. It is the obvious slot to repurpose.
 There is **no native field equal to Vitally's `arr`**, so the cards show the `MRR`
 account custom property annualised (net invoiced dollars, post-discount, × 12).
 
-It agrees exactly with the old figure on a good share of the book — Cline Bot
-231,644.40, T3 Tools 68,355.12, Determinate Systems 146,802.24, LayerZero
-51,503.64, DubClub, Hedra and Moonshot all land on the cent. It differs elsewhere,
-most sharply on **Wispr AI, which reads 523,405.92 against Vitally's
-1,046,405.34**. Vitally's ARR was its own smoothed measure, not an annualised MRR.
+It agrees exactly with the old figure on a good share of the book — roughly a
+third of accounts land on the cent. It differs elsewhere, most sharply on one
+account where the annualised MRR comes out at about half what Vitally carried.
+Vitally's ARR was its own smoothed measure, not an annualised MRR, so the two
+were never going to agree everywhere.
 
 Two other properties were measured and rejected. `Forecasted MRR × 12` projects
-the next invoice and goes negative on AWeber. `Confirmed MRR × 12` excludes
-upcoming invoices, so it is a partial-month figure that cannot be annualised at
-all: it reads 3,000 for 713 Online and 5,400 for Cline Bot. Only the `MRR`
-property is complete (31/31), never negative, and stable enough to sit on a card.
+the next invoice and goes **negative** on at least one account. `Confirmed MRR ×
+12` excludes upcoming invoices, so it is a partial-month figure that cannot be
+annualised at all — on the accounts checked it came back one to two orders of
+magnitude under the real number. Only the `MRR` property is complete (31/31),
+never negative, and stable enough to sit on a card.
 
 **A HogQL trap, measured.** Two `LEFT ANY JOIN` subqueries of the same shape
 against `postgres_customer_analytics_custompropertyvalue`, differing only in which
@@ -257,11 +258,11 @@ it lives in `.env` next to the Supabase one rather than in the keychain with the
 PostHog key. Coverage is 295 of the 304 accounts across every book; the rest
 fall back to the monogram.
 
-**Why domain and not company name.** logo.dev will answer `name/Moonshot`, but
+**Why domain and not company name.** logo.dev will answer a `name/` lookup, but
 it answers confidently rather than accurately. Checked against this book, the
-name endpoint returns a different company's mark for 5 of 31 accounts — the
-`Moonshot` it finds is not `moonshot.money`, and `T3 Tools Inc.` is not
-`ping.gg`. It also returns a real logo for names that do not exist at all
+name endpoint returns a different company's mark for 5 of 31 accounts — a
+one-word name finds a better-known company that happens to share the word, and a
+name ending in `Inc.` resolves to something unrelated. It also returns a real logo for names that do not exist at all
 ("Aaaa Bbbb Cccc" resolves to some company's monogram), and `fallback=404` does
 not help: the name path counts those as hits. On the domain path a miss really
 does 404, which is what lets the chip fall back to its own monogram. A wrong
@@ -269,8 +270,8 @@ logo on a customer's card is worse than no logo.
 
 **When a card wears the wrong mark**, add its org id to `DOMAIN_FIXES` in
 `lib/logos.ts`. Salesforce's `Domain__c` is right roughly nine times in ten;
-the map is for the rest. Silencer Shop's Salesforce domain resolves to
-BrandCave's wordmark and T3's to a stock cloud-platform screenshot, and two
+the map is for the rest. One account's Salesforce domain resolves to an
+unrelated company's wordmark and another's to a stock screenshot, and two
 accounts have no domain there at all — those four are the current contents.
 
 This replaced a scraper that walked each account's site for an apple-touch-icon
@@ -495,8 +496,8 @@ keeps the account it was saved with, so fixing a typo cannot silently re-file it
 
 The lookup table is built from your own book, in `lib/accountMatch.ts`, and it is
 fussier than a substring search in both directions at once. Case, accents and
-punctuation are thrown away on both sides, so "US Mobile", "us-mobile" and
-"USMobile" are one thing and adjacent words are tried joined together; but a
+punctuation are thrown away on both sides, so "North Wind", "north-wind" and
+"NorthWind" are one thing and adjacent words are tried joined together; but a
 match still has to start and end on a word boundary, so an account called Glow
 does not light up on "glowing". Beyond the full name it indexes two guesses — the
 name with a generic tail dropped ("Contoso Bot" → "Contoso") and a leading word
@@ -1493,11 +1494,12 @@ it.
   costs nothing.
 - Ranked in tiers by how confident the match is, not by how much of the name it
   covers: exact, name prefix, word prefix, name substring, domain substring,
-  then subsequence. That keeps "la" ordered Lahzo, LayerZero, Leland, TrustLayer
-  — rather than reordering them because the letters happened to sit closer
-  together in one. Folding drops punctuation and spacing on both sides, so
-  "US Mobile", "us-mobile" and "USMobile" are one string and "bootd" reaches
-  Boot.dev. Subsequence is what makes "wsbc" find WorkSafeBC.
+  then subsequence. So "no" puts a name starting with it above one merely
+  containing it, above one where the letters are only present in order — rather
+  than reordering them because those letters happened to sit closer together in
+  one. Folding drops punctuation and spacing on both sides, so "North Wind",
+  "north-wind" and "NorthWind" are one string, and "contosod" reaches
+  Contoso.dev. Subsequence is what lets initials find a run-together name.
 - **An empty query returns nothing, and the palette is only its input until you
   type.** It started out listing the whole book so that Down was a way to browse,
   which was the wrong instinct: a box sitting on a list of everything invites
