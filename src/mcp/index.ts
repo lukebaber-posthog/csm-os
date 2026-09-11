@@ -48,8 +48,8 @@ async function main(): Promise<void> {
       instructions:
         'The board for a PostHog CSM book of business. Accounts come from PostHog; where they ' +
         'sit and every logged touch live in Supabase.\n\n' +
-        'Accounts are addressed by name — "US Mobile", "usmobile" and the org id all work — so ' +
-        'there is no need to look an id up first.\n\n' +
+        'Accounts are addressed by name — "North Wind", "northwind" and the org id all ' +
+        'work — so there is no need to look an id up first.\n\n' +
         'Two layouts behave differently. "relationship" is arranged by hand, so move_account ' +
         'works there. "cadence" is computed from each account\'s last contact, so a card moves ' +
         'only when a touch is logged.'

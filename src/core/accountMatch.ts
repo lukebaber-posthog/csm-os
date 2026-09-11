@@ -1,46 +1,52 @@
 /**
  * A lookup table from what you *write* to which account you meant.
  *
- * "Look into Exception Spike for Athena Intelligence" already names its account.
- * Making you then find that same account in a 31-row select is asking you to say
- * it twice, so the composer reads the words instead: type a name you own and its
- * chip appears in the picker, delete the name and it goes away again.
+ * "Look into the exception spike for Contoso Freight" already names its account.
+ * Making you then find that same account in a thirty-row select is asking you to
+ * say it twice, so the composer reads the words instead: type a name you own and
+ * its chip appears in the picker, delete the name and it goes away again.
+ *
+ * Every example below uses invented companies. The index itself is built at
+ * runtime from the book PostHog returns — there is no account named anywhere in
+ * this file, and adding one would be a bug, since it would only ever be right
+ * for whoever added it.
  *
  * ## Why not `text.includes(name)`
  *
  * Two reasons, and they pull in opposite directions.
  *
- * Substring matching is too *loose*: "Gloo" would match inside "glooming", and
- * every account whose name is an ordinary word would light up on prose. So a
- * match here has to start and end on a word boundary.
+ * Substring matching is too *loose*: an account called "Glow" would match
+ * inside "glowing", and every account whose name is an ordinary word would light
+ * up on prose. So a match here has to start and end on a word boundary.
  *
- * Verbatim matching is too *strict*: nobody types "Boot.dev", "USMobile" and
- * "Nemours Children's Health" with the punctuation Vitally has. So both sides
- * are reduced to letters and digits only — "US Mobile", "us-mobile" and
- * "USMobile" all become `usmobile` — and the haystack is compared a word at a
+ * Verbatim matching is too *strict*: nobody types "Contoso.dev", "NorthWind" and
+ * "Fabrikam Children's Health" with the punctuation the CRM has. So both sides
+ * are reduced to letters and digits only — "North Wind", "north-wind" and
+ * "NorthWind" all become `northwind` — and the haystack is compared a word at a
  * time so those boundaries survive the reduction. Adjacent words are joined and
- * tried together, which is what lets a two-word "Work Safe BC" find the
- * one-word `worksafebc`, and a one-word `bootdev` find "Boot.dev".
+ * tried together, which is what lets a two-word "North Wind" find a one-word
+ * `northwind`, and a one-word `contosodev` find "Contoso.dev".
  *
  * ## Aliases
  *
  * Full names are the ground truth and are always indexed. Beyond them the index
- * guesses, because in a note you write "Nemours", not "Nemours Children's
+ * guesses, because in a note you write "Fabrikam", not "Fabrikam Children's
  * Health". Two guesses, both deliberately timid:
  *
- * 1. the name with generic tails stripped — "Cline Bot" → "Cline", "Athena
- *    Intelligence" → "Athena", "T3 Tools Inc." → "T3";
+ * 1. the name with generic tails stripped — "Contoso Bot" → "Contoso", "Contoso
+ *    Intelligence" → "Contoso", "Northwind Tools Inc." → "Northwind";
  * 2. the leading word on its own, when it is long and distinctive enough to
- *    carry the whole name — "Nemours", "Determinate", but never "Smart" (from
- *    Smart Access) or "Clinical" (from Clinical Notes AI).
+ *    carry the whole name — "Fabrikam", "Northwind", but never "Smart" (from a
+ *    "Smart Access") or "Clinical" (from a "Clinical Notes AI"-style name).
  *
  * A guess that lands on two accounts, or on another account's real name, is
  * dropped from the index rather than resolved by coin toss. A wrong logo on a
  * card is worse than no logo, and the same is true of a wrong link.
  *
- * Names only — not domains. `logos.ts` needs a domain and takes what Salesforce
- * has, but Salesforce's domain for T3 Tools is `ping.gg`, and indexing "ping"
- * would file half a week's notes under one account.
+ * Names only — not domains. `logos.ts` needs a domain and takes what PostHog
+ * has, but a company's registered domain is often a product name that means
+ * something else entirely, and indexing an ordinary word like that would file
+ * half a week's notes under one account.
  */
 
 /** The two fields the matcher needs; `TodoAccount` and `Account` both have them. */
@@ -78,8 +84,8 @@ export const EMPTY_ACCOUNT_INDEX: AccountIndex = {
  * word. Stripping repeats, so "Foo Labs Inc" gives up both.
  *
  * Not here on purpose: `health`, `dev`, `shop` and their kind. They read as
- * generic but they are load-bearing — "Nemours Children's" is not a name anyone
- * writes, and "Boot" on its own is not Boot.dev.
+ * generic but they are load-bearing — "Fabrikam Children's" is not a name anyone
+ * writes, and "Contoso" on its own is not "Contoso.dev".
  */
 const GENERIC_TAIL = new Set([
   'ag',
@@ -152,8 +158,8 @@ const GENERIC_TAIL = new Set([
  * This gates the *guesses* only — a real account name is indexed whatever it is,
  * because the whole point is that writing the name links the account, and it is
  * the user's own book. It is the derived one-word aliases that need a filter,
- * since they are the index's invention: "Smart Access" is unmistakable, "smart"
- * on its own is a word in half the notes anyone writes.
+ * since they are the index's invention: a "Smart Access" is unmistakable,
+ * "smart" on its own is a word in half the notes anyone writes.
  *
  * Skewed towards what actually turns up in a CSM's to-dos — the nouns of the
  * job, the adjectives of marketing, and the everyday verbs — rather than trying
@@ -430,7 +436,7 @@ const MIN_NAME_LENGTH = 3
 
 /**
  * Shortest *derived* one-word alias. Stricter than a real name, because a guess
- * has to earn its place: "Wispr" yes, "Ace" no.
+ * has to earn its place: a five-letter coined word yes, "Ace" no.
  */
 const MIN_TRIMMED_LENGTH = 4
 
@@ -444,7 +450,7 @@ const MIN_HEAD_LENGTH = 5
  * Slack in the word-span search, in words.
  *
  * An alias can be found across *more* words than it was written with, since
- * "USMobile" is one word in Vitally and two on a keyboard. Two spare words
+ * "NorthWind" is one word in the CRM and two on a keyboard. Two spare words
  * covers the ways a name gets broken up in practice without walking the whole
  * sentence at every position.
  */
@@ -567,7 +573,7 @@ export function buildAccountIndex(accounts: readonly MatchableAccount[]): Accoun
  *
  * Scanned left to right, longest first at each position, so the answer is the
  * account mentioned *earliest* — the one the note is about, rather than the one
- * mentioned in passing at the end — and "Athena Intelligence" beats the "Athena"
+ * mentioned in passing at the end — and "Contoso Intelligence" beats the "Contoso"
  * sitting inside it.
  */
 export function matchAccount(index: AccountIndex, text: string): AccountMatch | null {

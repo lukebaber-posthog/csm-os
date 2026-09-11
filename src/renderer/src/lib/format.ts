@@ -100,11 +100,11 @@ export function startOfDaysAgoIso(days: number): string {
   return d.toISOString()
 }
 
-/** Two-letter monogram for the card avatar: "Clinical Notes AI" -> "CN". */
+/** Two-letter monogram for the card avatar: "Contoso Freight" -> "CF". */
 export function monogram(name: string): string {
   const words = name.replace(/[^A-Za-z0-9 ]/g, ' ').trim().split(/\s+/)
   if (words.length === 0 || !words[0]) return '??'
-  // A leading number reads better whole ("713 Online" -> "71", not "7O").
+  // A leading number reads better whole ("123 Online" -> "12", not "1O").
   if (/^\d/.test(words[0]) || words.length === 1) return words[0].slice(0, 2).toUpperCase()
   return (words[0][0] + words[1][0]).toUpperCase()
 }

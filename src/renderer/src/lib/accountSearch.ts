@@ -12,8 +12,9 @@
 const COMBINING_MARK_RE = /[̀-ͯ]/g
 
 /**
- * Punctuation and spacing thrown away on both sides, so "US Mobile", "us-mobile"
- * and "USMobile" are one string, and "Boot.dev" is reachable by typing "bootd".
+ * Punctuation and spacing thrown away on both sides, so "North Wind",
+ * "north-wind" and "NorthWind" are one string, and "Contoso.dev" is reachable by
+ * typing "contosod".
  *
  * `accountMatch` folds too, but only for diacritics and case — it splits on
  * punctuation into words instead of collapsing it, because it is scanning prose
@@ -56,9 +57,9 @@ export interface SearchableAccount {
  * How well an account answers the query, lowest first, or null for no match.
  *
  * The tiers are ordered by how confident the match is rather than by how much of
- * the name it covers, so typing "la" puts Lahzo (a name prefix) above LayerZero
- * (also a prefix) above Etactics (a subsequence, l…a) — and never the other way
- * round because the letters happened to be closer together.
+ * the name it covers, so typing "no" puts Northwind (a name prefix) above
+ * Fabrikam North (a word prefix) above Contoso (a subsequence, n…o) — and never
+ * the other way round because the letters happened to be closer together.
  */
 function tierOf(account: SearchableAccount, query: string): number | null {
   const name = fold(account.orgName)

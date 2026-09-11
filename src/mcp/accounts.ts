@@ -61,7 +61,7 @@ export class UnknownAccountError extends Error {
  * Tools take names because that is what a person says, and an id would mean a
  * lookup call before every real one. Three ways in, cheapest first: the org id
  * itself, an exact name, then the same fuzzy matcher the to-do composer uses to
- * link a to-do from its own words — so "US Mobile", "us-mobile" and "USMobile"
+ * link a to-do from its own words — so "North Wind", "north-wind" and "NorthWind"
  * all land on the same account, and an ambiguous guess is refused rather than
  * picked.
  */

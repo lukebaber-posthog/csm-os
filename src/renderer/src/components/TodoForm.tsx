@@ -129,7 +129,7 @@ export function TodoForm({
   const [saving, setSaving] = useState(false)
 
   /*
-   * "Look into Exception Spike for Athena Intelligence" already names its account,
+   * "Look into the exception spike for Contoso Freight" already names its account,
    * so the picker fills itself in rather than asking you to say it a second time.
    * It tracks the text both ways — delete the name and the link clears — which is
    * what makes it safe to do without asking: nothing here is a decision you cannot
