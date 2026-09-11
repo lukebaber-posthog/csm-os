@@ -131,24 +131,31 @@ export function AccountSearch({ enabled, accounts, onPick }: Props) {
          * palette since puts itself: the list grows downwards, so a centred box
          * would drift as you type. `p-0` because the input is the top edge.
          *
-         * A pill until there is something to show, then a rounded panel. The
-         * shape is doing the explaining: an empty box that is only a box invites
-         * typing, where one sitting on a list of everything invites scrolling.
+         * One radius, never two. `rounded-full` collapsed and something smaller
+         * expanded meant the corners animated between them on the dialog's
+         * 200ms transition, and a stadium shape squashing into a panel reads as
+         * a glitch rather than a transition.
+         *
+         * 27px is half the collapsed height: the input row below pins 52px and
+         * the border adds one each side, which counts, because the radius
+         * applies to the border box. So the bar is a true pill when it is alone,
+         * and the same corner is simply a well-rounded panel once the results
+         * are under it. Nothing moves but the height.
          *
          * The height cap is on the list below, not here — this one is only a
          * ceiling for a short window, and never binds at a normal size.
          */
-        className={cn(
-          'top-[18%] max-h-[45vh] translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-xl',
-          showPanel ? 'rounded-2xl' : 'rounded-full'
-        )}
+        className="top-[18%] max-h-[45vh] translate-y-0 gap-0 overflow-hidden rounded-[27px] p-0 sm:max-w-xl"
         aria-describedby={undefined}
       >
         <DialogTitle className="sr-only">Search accounts</DialogTitle>
 
         <div
           className={cn(
-            'flex items-center gap-2.5 px-5',
+            // h-13 is 52px; with the border that is 54 outer, which the 27px
+            // corner is half of. Pinned here rather than left to the input's
+            // padding, so the two cannot drift apart and stop being a pill.
+            'flex h-13 shrink-0 items-center gap-2.5 px-5',
             showPanel && 'border-b border-[var(--color-line)]'
           )}
         >
@@ -167,7 +174,7 @@ export function AccountSearch({ enabled, accounts, onPick }: Props) {
             aria-controls={showPanel ? 'account-search-results' : undefined}
             aria-activedescendant={results[active] ? `account-result-${results[active].orgId}` : undefined}
             className={
-              'w-full bg-transparent py-3.5 text-[14px] outline-none ' +
+              'w-full bg-transparent text-[14px] outline-none ' +
               'placeholder:text-[var(--color-ink-faint)]'
             }
           />
@@ -184,7 +191,7 @@ export function AccountSearch({ enabled, accounts, onPick }: Props) {
              * enough that the box does not become the screen — you are meant to
              * narrow it by typing rather than scroll thirty accounts.
              */
-            className="max-h-[28vh] overflow-y-auto p-1.5"
+            className="max-h-[28vh] overflow-y-auto px-1.5 pt-1.5 pb-3"
           >
             {results.length === 0 ? (
               <p className="px-2.5 py-6 text-center text-[12px] text-[var(--color-ink-faint)]">
