@@ -123,8 +123,11 @@ export function AccountSearch({ enabled, accounts, onPick }: Props) {
          * Above centre rather than at it, which is where Spotlight and every
          * palette since puts itself: the list grows downwards, so a centred box
          * would drift as you type. `p-0` because the input is the top edge.
+         *
+         * The height cap is on the list below, not here — this one is only a
+         * ceiling for a short window, and never binds at a normal size.
          */
-        className="top-[18%] max-h-[70vh] translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-xs"
+        className="top-[18%] max-h-[45vh] translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-xl"
         aria-describedby={undefined}
       >
         <DialogTitle className="sr-only">Search accounts</DialogTitle>
@@ -155,7 +158,13 @@ export function AccountSearch({ enabled, accounts, onPick }: Props) {
           ref={listRef}
           id="account-search-results"
           role="listbox"
-          className="max-h-[52vh] overflow-y-auto p-1.5"
+          /*
+           * Sized to land on roughly six and a half rows, so the half row is the
+           * hint that the list scrolls. Deep enough to choose from, shallow
+           * enough that the box does not become the screen — you are meant to
+           * narrow it by typing rather than scroll thirty accounts.
+           */
+          className="max-h-[28vh] overflow-y-auto p-1.5"
         >
           {results.length === 0 ? (
             <p className="px-2.5 py-6 text-center text-[12px] text-[var(--color-ink-faint)]">
