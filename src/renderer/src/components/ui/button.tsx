@@ -12,8 +12,13 @@ const buttonVariants = cva(
         default: "bg-primary text-primary-foreground hover:bg-primary/90",
         destructive:
           "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
+        // `border-input` on both themes, not a bare `border` in light and
+        // `dark:border-input` in dark. Without a global `* { border-color }`
+        // rule an uncoloured border falls back to currentColor, so Cancel inside
+        // the touch form wore a black outline while the dialog around it was
+        // muted. `--color-input` points at `--color-line`; see the styling notes.
         outline:
-          "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
+          "border border-input bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:hover:bg-input/50",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost:

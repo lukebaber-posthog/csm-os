@@ -1522,3 +1522,22 @@ so in that tab *every* dialog in the app stays mounted after it closes. It reads
 exactly like a leak in whatever you just wrote. Check `data-state` rather than
 presence before believing it, and prove the environment with a throwaway
 animation rather than reasoning about it.
+
+### The bare-border bug, finally swept up
+
+`tooltip`, `select` and `dropdown-menu` each carry a comment about naming their
+border colour, because this project has no global `* { border-color }` rule and
+an uncoloured `border` falls back to currentColor — which is ink, and draws a
+black box. Two vendored components were still missing it:
+
+- `DialogContent` had a bare `border`, so every dialog in the app — settings,
+  the completed list, the cadence touch form, the account palette — was outlined
+  in near-black instead of `--color-line`.
+- `button`'s `outline` variant had a bare `border` in light mode and
+  `dark:border-input` in dark, so Cancel inside the touch form wore a black
+  outline while the dialog around it was muted. Now `border-input` on both,
+  which the theme points at `--color-line`.
+
+Worth knowing when adding any shadcn component with its CLI: the vendored source
+assumes that global rule exists, so check every `border` it ships with before
+trusting how it looks in dark mode.

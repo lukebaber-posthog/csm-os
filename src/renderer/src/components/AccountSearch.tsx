@@ -124,7 +124,7 @@ export function AccountSearch({ enabled, accounts, onPick }: Props) {
          * palette since puts itself: the list grows downwards, so a centred box
          * would drift as you type. `p-0` because the input is the top edge.
          */
-        className="top-[18%] max-h-[70vh] translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-xl"
+        className="top-[18%] max-h-[70vh] translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-xs"
         aria-describedby={undefined}
       >
         <DialogTitle className="sr-only">Search accounts</DialogTitle>
