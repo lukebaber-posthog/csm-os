@@ -72,18 +72,21 @@ function tierOf(account: SearchableAccount, query: string): number | null {
 }
 
 /**
- * The book, filtered and ranked. An empty query returns everything in name
- * order, so opening the palette and pressing Down is a way to browse rather than
- * a dead end.
+ * The book, filtered and ranked.
+ *
+ * An empty query returns nothing rather than everything. The palette shows only
+ * its input until you type, so returning the whole book would leave a selection
+ * pointing at a row nobody can see — and Enter would open whichever account
+ * happened to sort first.
  */
 export function searchAccounts<T extends SearchableAccount>(
   accounts: readonly T[],
   query: string
 ): T[] {
   const folded = fold(query)
-  const byName = (a: T, b: T) => a.orgName.localeCompare(b.orgName)
+  if (!folded) return []
 
-  if (!folded) return [...accounts].sort(byName)
+  const byName = (a: T, b: T) => a.orgName.localeCompare(b.orgName)
 
   return accounts
     .map((account) => ({ account, tier: tierOf(account, folded) }))

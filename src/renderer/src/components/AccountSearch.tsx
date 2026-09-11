@@ -48,6 +48,13 @@ export function AccountSearch({ enabled, accounts, onPick }: Props) {
 
   const results = useMemo(() => searchAccounts(accounts, query), [accounts, query])
 
+  /**
+   * Whether anything shows below the input. Keyed off the query rather than the
+   * result count, so "no account matches" is still said out loud instead of the
+   * box silently staying a pill.
+   */
+  const showPanel = query.trim().length > 0
+
   // Typing narrows the list under the cursor, so the highlight has to come back
   // to the top or it ends up pointing at whatever survived at that index.
   useEffect(() => {
@@ -124,15 +131,27 @@ export function AccountSearch({ enabled, accounts, onPick }: Props) {
          * palette since puts itself: the list grows downwards, so a centred box
          * would drift as you type. `p-0` because the input is the top edge.
          *
+         * A pill until there is something to show, then a rounded panel. The
+         * shape is doing the explaining: an empty box that is only a box invites
+         * typing, where one sitting on a list of everything invites scrolling.
+         *
          * The height cap is on the list below, not here — this one is only a
          * ceiling for a short window, and never binds at a normal size.
          */
-        className="top-[18%] max-h-[45vh] translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-xl"
+        className={cn(
+          'top-[18%] max-h-[45vh] translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-xl',
+          showPanel ? 'rounded-2xl' : 'rounded-full'
+        )}
         aria-describedby={undefined}
       >
         <DialogTitle className="sr-only">Search accounts</DialogTitle>
 
-        <div className="flex items-center gap-2.5 border-b border-[var(--color-line)] px-4">
+        <div
+          className={cn(
+            'flex items-center gap-2.5 px-5',
+            showPanel && 'border-b border-[var(--color-line)]'
+          )}
+        >
           <Search aria-hidden className="h-4 w-4 shrink-0 text-[var(--color-ink-faint)]" />
           <input
             autoFocus
@@ -144,8 +163,8 @@ export function AccountSearch({ enabled, accounts, onPick }: Props) {
             // A listbox the input drives, so a screen reader follows the
             // highlight rather than only hearing what was typed.
             role="combobox"
-            aria-expanded
-            aria-controls="account-search-results"
+            aria-expanded={showPanel}
+            aria-controls={showPanel ? 'account-search-results' : undefined}
             aria-activedescendant={results[active] ? `account-result-${results[active].orgId}` : undefined}
             className={
               'w-full bg-transparent py-3.5 text-[14px] outline-none ' +
@@ -154,55 +173,57 @@ export function AccountSearch({ enabled, accounts, onPick }: Props) {
           />
         </div>
 
-        <div
-          ref={listRef}
-          id="account-search-results"
-          role="listbox"
-          /*
-           * Sized to land on roughly six and a half rows, so the half row is the
-           * hint that the list scrolls. Deep enough to choose from, shallow
-           * enough that the box does not become the screen — you are meant to
-           * narrow it by typing rather than scroll thirty accounts.
-           */
-          className="max-h-[28vh] overflow-y-auto p-1.5"
-        >
-          {results.length === 0 ? (
-            <p className="px-2.5 py-6 text-center text-[12px] text-[var(--color-ink-faint)]">
-              No account matches “{query.trim()}”.
-            </p>
-          ) : (
-            results.map((account, i) => (
-              <button
-                key={account.orgId}
-                id={`account-result-${account.orgId}`}
-                type="button"
-                role="option"
-                aria-selected={i === active}
-                data-active={i === active}
-                // Pointer rather than hover state, so mousing across the list
-                // moves the same highlight Enter acts on instead of a second one.
-                onPointerMove={() => setActive(i)}
-                onClick={() => pick(account.orgId)}
-                className={cn(
-                  'flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors',
-                  i === active ? 'bg-[var(--color-surface)]' : 'bg-transparent'
-                )}
-              >
-                <AccountChip
-                  orgId={account.orgId}
-                  orgName={account.orgName}
-                  domain={account.domain}
-                />
-                <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
-                  {account.orgName}
-                </span>
-                <span className="shrink-0 text-[11px] tabular-nums text-[var(--color-ink-faint)]">
-                  {contactAge(account.lastTouchedAt)}
-                </span>
-              </button>
-            ))
-          )}
-        </div>
+        {showPanel && (
+          <div
+            ref={listRef}
+            id="account-search-results"
+            role="listbox"
+            /*
+             * Sized to land on roughly six and a half rows, so the half row is the
+             * hint that the list scrolls. Deep enough to choose from, shallow
+             * enough that the box does not become the screen — you are meant to
+             * narrow it by typing rather than scroll thirty accounts.
+             */
+            className="max-h-[28vh] overflow-y-auto p-1.5"
+          >
+            {results.length === 0 ? (
+              <p className="px-2.5 py-6 text-center text-[12px] text-[var(--color-ink-faint)]">
+                No account matches “{query.trim()}”.
+              </p>
+            ) : (
+              results.map((account, i) => (
+                <button
+                  key={account.orgId}
+                  id={`account-result-${account.orgId}`}
+                  type="button"
+                  role="option"
+                  aria-selected={i === active}
+                  data-active={i === active}
+                  // Pointer rather than hover state, so mousing across the list
+                  // moves the same highlight Enter acts on instead of a second one.
+                  onPointerMove={() => setActive(i)}
+                  onClick={() => pick(account.orgId)}
+                  className={cn(
+                    'flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors',
+                    i === active ? 'bg-[var(--color-surface)]' : 'bg-transparent'
+                  )}
+                >
+                  <AccountChip
+                    orgId={account.orgId}
+                    orgName={account.orgName}
+                    domain={account.domain}
+                  />
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
+                    {account.orgName}
+                  </span>
+                  <span className="shrink-0 text-[11px] tabular-nums text-[var(--color-ink-faint)]">
+                    {contactAge(account.lastTouchedAt)}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   )

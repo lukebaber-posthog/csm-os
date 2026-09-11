@@ -1498,8 +1498,14 @@ it.
   together in one. Folding drops punctuation and spacing on both sides, so
   "US Mobile", "us-mobile" and "USMobile" are one string and "bootd" reaches
   Boot.dev. Subsequence is what makes "wsbc" find WorkSafeBC.
-- An empty query returns the whole book in name order, so opening the palette and
-  pressing Down is a way to browse rather than a dead end.
+- **An empty query returns nothing, and the palette is only its input until you
+  type.** It started out listing the whole book so that Down was a way to browse,
+  which was the wrong instinct: a box sitting on a list of everything invites
+  scrolling, where a box that is only a box invites typing — and typing is what
+  the thing is for. The shape says it too, a pill until there are results and a
+  rounded panel once there are. Returning everything on an empty query would also
+  leave the selection pointing at a row nobody can see, so Enter would open
+  whichever account happened to sort first.
 - The component owns its own shortcut instead of taking an `open` prop, so the
   call site is one line and there is no open state to keep in step with a key
   handler. It is disabled on the to-do board, where there is no account to open.
