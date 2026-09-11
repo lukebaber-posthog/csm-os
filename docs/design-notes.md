@@ -268,11 +268,18 @@ not help: the name path counts those as hits. On the domain path a miss really
 does 404, which is what lets the chip fall back to its own monogram. A wrong
 logo on a customer's card is worse than no logo.
 
-**When a card wears the wrong mark**, add its org id to `DOMAIN_FIXES` in
-`lib/logos.ts`. Salesforce's `Domain__c` is right roughly nine times in ten;
-the map is for the rest. One account's Salesforce domain resolves to an
-unrelated company's wordmark and another's to a stock screenshot, and two
-accounts have no domain there at all — those four are the current contents.
+**When a card wears the wrong mark**, correct that account's `website_domain`
+property in PostHog. The query reads it ahead of Salesforce's `Domain__c`
+precisely so that it can act as the override: `Domain__c` is right roughly nine
+times in ten, and it is not a field a CSM can fix when it is one of the others.
+
+This replaced a `DOMAIN_FIXES` map of org id to domain in `lib/logos.ts`. It was
+the wrong shape twice over — it hardcoded customers into the repo, and it was a
+private fix that only helped whoever edited the source, so every other CSM's
+board kept the wrong mark. Correcting the property fixes the account for
+everyone. Note that the order change cannot repair an account where
+`website_domain` is simply unset; Salesforce's value still wins by default, and
+setting the property is the fix.
 
 This replaced a scraper that walked each account's site for an apple-touch-icon
 and committed the results to `assets/logos/`. It only ever worked for one
@@ -1580,5 +1587,5 @@ palette stays at `height: 0` and the drawer stays at `x: 100%`, off screen. Both
 look exactly like a broken animation and are not. What *is* checkable there is
 the geometry motion is aiming at — the list measures 268px and the container
 would land at 322px, which is what it measured before any of this was added — and
-that the feature still works: typing "cluely" and pressing Enter still opens the
+that the feature still works: typing a name and pressing Enter still opens the
 right account. Judge the motion itself in the real window.

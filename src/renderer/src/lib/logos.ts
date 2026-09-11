@@ -9,12 +9,20 @@
  * the script, and every other CSM's board was monograms all the way down. A
  * URL built at render time has neither problem.
  *
- * **Domain, not company name.** logo.dev will resolve `name/Moonshot`, but it
+ * **Domain, not company name.** logo.dev will resolve a `name/` lookup, but it
  * answers confidently rather than accurately: it returns a different company's
- * mark for 5 of the 31 accounts in this book and a real logo even for invented
+ * mark for 5 of the 31 accounts in one book and a real logo even for invented
  * names like "Aaaa Bbbb Cccc" (`fallback=404` does not save you — the name path
  * still calls that a hit). A wrong logo on a customer's card is worse than no
  * logo, so lookups go by domain, where a miss really does 404.
+ *
+ * **The domain comes from PostHog, and only from PostHog.** There used to be a
+ * map here of org id to domain, for the handful of accounts whose Salesforce
+ * record pointed at the wrong company. It was the wrong shape twice over: it
+ * hardcoded customers into the repo, and it was a private fix that only helped
+ * whoever edited it — every other CSM's board kept the wrong mark. Correcting
+ * the account's `website_domain` in PostHog now fixes it for everyone, which is
+ * why `main/posthog.ts` reads that property ahead of the Salesforce one.
  */
 
 /**
@@ -32,26 +40,6 @@ if (!TOKEN) {
     'VITE_PUBLIC_LOGO_DEV_API is not set — account cards will show monograms ' +
       'instead of logos. Copy it from .env.example.'
   )
-}
-
-/**
- * Where Salesforce's `Domain__c` points at the wrong company, keyed by Vitally
- * organization id.
- *
- * The domain that ships with the account is right about 90% of the time and is
- * what makes this work for everyone's book without maintenance — this map is
- * only for the ones caught being wrong, so it stays short. Silencer Shop's
- * Salesforce domain returns BrandCave's wordmark and T3's returns a stock
- * cloud-platform screenshot; the other two have no domain in Salesforce at all.
- *
- * Add a line here when a card wears someone else's mark. Nothing breaks if an
- * id here is not in your book — it simply never matches.
- */
-const DOMAIN_FIXES: Record<string, string> = {
-  '0190b770-0568-0000-6f70-4bfc58c93ebd': 'silencershop.com', // was brandcave.co
-  '018a0719-b6b2-0000-1cdd-1dba07e61b1b': 'ping.gg', // T3 Tools, was ping.cash
-  '0198a8eb-c178-0000-b015-d688667ed32d': 'openpractice.net', // no Salesforce domain
-  '019580ae-d173-0000-58ac-c3d15956848e': 'trustlayer.io' // no Salesforce domain
 }
 
 /**
@@ -73,10 +61,9 @@ const PARAMS = 'size=128&format=png&theme=light&fallback=404'
  * The account's logo URL, or null when there is nothing to look it up by — in
  * which case `AccountChip` draws the monogram.
  */
-export function logoUrl(orgId: string, domain: string | null | undefined): string | null {
-  const resolved = DOMAIN_FIXES[orgId] ?? domain
-  if (!TOKEN || !resolved) return null
-  return `https://img.logo.dev/${encodeURIComponent(resolved)}?token=${TOKEN}&${PARAMS}`
+export function logoUrl(domain: string | null | undefined): string | null {
+  if (!TOKEN || !domain) return null
+  return `https://img.logo.dev/${encodeURIComponent(domain)}?token=${TOKEN}&${PARAMS}`
 }
 
 /** Where the free tier's attribution link has to point. See SettingsDialog. */

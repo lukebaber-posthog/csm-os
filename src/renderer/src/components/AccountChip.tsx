@@ -36,7 +36,7 @@ export function AccountChip({ orgId, orgName, domain, onClick, label, size = 'md
    * with no effect to keep in step.
    */
   const [failedSrc, setFailedSrc] = useState<string | null>(null)
-  const src = logoUrl(orgId, domain)
+  const src = logoUrl(domain)
   const logo = src && src !== failedSrc ? src : null
 
   const box =

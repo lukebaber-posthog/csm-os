@@ -98,6 +98,17 @@ export async function fetchAccounts(key: string, csmEmail: string): Promise<Acco
    *   Vitally query reached through cached traits) misses 5 of 31, and the
    *   account's own `website_domain` property misses 15. Together they miss 2 —
    *   the same coverage the Vitally join gave, without Vitally.
+   *
+   *   `website_domain` is read FIRST, and the order is the whole point. Where
+   *   Salesforce's record names the wrong company the card wears a stranger's
+   *   logo, and `domain_c` is not a field a CSM can fix. `website_domain` is a
+   *   PostHog account property they can, so putting it in front turns a wrong
+   *   logo into a data correction that fixes the account for everyone, instead
+   *   of a hardcoded override that only helped whoever edited the source. That
+   *   map used to live in `renderer/lib/logos.ts`; it is gone.
+   *
+   *   Coverage is unchanged by the order — `coalesce` still returns a value
+   *   whenever either source has one, so the same 2 accounts miss.
    * - ARR is the `MRR` account custom property annualised. There is no native
    *   field equal to Vitally's `arr`; see the README for what changes.
    *
@@ -116,8 +127,8 @@ export async function fetchAccounts(key: string, csmEmail: string): Promise<Acco
         round(p.mrr * 12, 2) AS arr,
         toString(toDate(r.started_at)) AS csm_date_assigned,
         coalesce(
-            nullIf(sf.domain_c, ''),
-            nullIf(JSONExtractString(toString(a.properties), 'website_domain'), '')
+            nullIf(JSONExtractString(toString(a.properties), 'website_domain'), ''),
+            nullIf(sf.domain_c, '')
         ) AS domain
     FROM system.account_relationships AS r
     LEFT ANY JOIN system.accounts AS a ON a.id = r.account_id
