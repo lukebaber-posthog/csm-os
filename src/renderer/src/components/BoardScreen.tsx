@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { AnimatePresence } from 'motion/react'
 import { useBoard } from '../hooks/useBoard'
 import { useSupabaseSync } from '../hooks/useSupabaseSync'
 import { useTodos } from '../hooks/useTodos'
@@ -336,15 +337,20 @@ export function BoardScreen({ email, theme, onToggleTheme, onSignOut }: Props) {
         )}
       </main>
 
-      {openCard && (
-        <AccountDrawer
-          email={email}
-          card={openCard}
-          onClose={() => setOpenOrgId(null)}
-          onSetChannel={board.setChannel}
-          onLatestTouchChange={board.setLastTouch}
-        />
-      )}
+      {/* AnimatePresence so the panel slides back out rather than vanishing.
+          The exiting copy keeps the props it last rendered with, which is why
+          `openCard` going null mid-exit is safe. */}
+      <AnimatePresence>
+        {openCard && (
+          <AccountDrawer
+            email={email}
+            card={openCard}
+            onClose={() => setOpenOrgId(null)}
+            onSetChannel={board.setChannel}
+            onLatestTouchChange={board.setLastTouch}
+          />
+        )}
+      </AnimatePresence>
 
       {/*
         Mounted here rather than inside TodoBoard, so an effect keeps playing if you

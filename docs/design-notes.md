@@ -1547,3 +1547,36 @@ black box. Two vendored components were still missing it:
 Worth knowing when adding any shadcn component with its CLI: the vendored source
 assumes that global rule exists, so check every `border` it ships with before
 trusting how it looks in dark mode.
+
+## Motion on the drawer and the palette
+
+- **The account panel slides in from the right** (`motion.aside`, `x: '100%'` to
+  `0`) with the scrim fading on its own shorter, linear curve, so the backdrop is
+  already dark by the time the panel is halfway across. `AnimatePresence` lives at
+  the call site in `BoardScreen`, which is what lets it slide back out — an
+  exiting child keeps the props it last rendered with, so `openCard` going null
+  mid-exit is safe.
+- Transform only, never an animated `width` or `right`. A transform is
+  composited and cannot reflow the panel's contents, which matters because those
+  contents are a form full of inputs whose layout would otherwise be recomputed
+  on every frame of the slide.
+- **The palette grows** rather than appearing: the bar is the constant and the
+  results are what arrive, so height is the only thing that moves.
+- It animates to a **measured pixel height**, not `height: 'auto'`. The house
+  rule against `auto` is earned — see the to-do composer, which sat at `height: 0`
+  with `overflow-hidden` clipping its buttons out of the hit-test when motion's
+  measurement pass did not land, so the form looked present and could not be
+  clicked. A layout effect measures the list and motion animates to that number,
+  which is an ordinary value animation rather than the fragile case, and the
+  `'auto'` fallback means the worst outcome is no animation rather than no
+  results.
+
+### Neither of these can be checked in the preview
+
+The collaborative browser tab produces no frames, so motion never ticks: the
+palette stays at `height: 0` and the drawer stays at `x: 100%`, off screen. Both
+look exactly like a broken animation and are not. What *is* checkable there is
+the geometry motion is aiming at — the list measures 268px and the container
+would land at 322px, which is what it measured before any of this was added — and
+that the feature still works: typing "cluely" and pressing Enter still opens the
+right account. Judge the motion itself in the real window.

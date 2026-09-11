@@ -1,8 +1,10 @@
 import { useEffect } from 'react'
+import { motion } from 'motion/react'
 import type { Card } from '../hooks/useBoard'
 import { useTouchLog } from '../hooks/useTouchLog'
 import { CHANNEL_LABELS, type ContactChannel } from '../lib/channels'
 import { arrExact, contactAge } from '../lib/format'
+import { EASE_SWIFT } from '../lib/motion'
 import { Button } from '@/components/ui/button'
 import { ChannelSlider } from './ChannelSlider'
 import { Notice } from './ui/Notice'
@@ -43,12 +45,29 @@ export function AccountDrawer({
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
-      <button
+      {/* The scrim fades on its own curve rather than riding the panel's, so it
+          is already dark by the time the panel is halfway in. */}
+      <motion.button
         aria-label="Close"
         onClick={onClose}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.18, ease: 'linear' }}
         className="flex-1 bg-black/20 dark:bg-black/50"
       />
-      <aside className="flex h-full w-[400px] flex-col border-l border-[var(--color-line)] bg-[var(--color-page)] shadow-2xl">
+      {/*
+        Transform only — `x` as a percentage of the panel's own width, never an
+        animated `width` or `right`. A transform is composited and cannot reflow
+        the form inside, which matters here because that form is full of inputs
+        whose layout would otherwise be recomputed on every frame of the slide.
+      */}
+      <motion.aside
+        initial={{ x: '100%' }}
+        animate={{ x: 0 }}
+        exit={{ x: '100%' }}
+        transition={{ duration: 0.26, ease: EASE_SWIFT }}
+        className="flex h-full w-[400px] flex-col border-l border-[var(--color-line)] bg-[var(--color-page)] shadow-2xl">
         <header className="shrink-0 border-b border-[var(--color-line)] px-5 py-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -145,7 +164,7 @@ export function AccountDrawer({
             />
           </div>
         </div>
-      </aside>
+      </motion.aside>
     </div>
   )
 }

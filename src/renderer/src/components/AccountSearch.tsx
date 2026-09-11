@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
 import { Search } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { contactAge } from '../lib/format'
+import { EASE_SWIFT } from '../lib/motion'
 import { searchAccounts, type SearchableAccount } from '../lib/accountSearch'
 import { AccountChip } from './AccountChip'
 
@@ -54,6 +56,26 @@ export function AccountSearch({ enabled, accounts, onPick }: Props) {
    * box silently staying a pill.
    */
   const showPanel = query.trim().length > 0
+
+  /*
+   * The height the panel grows to, measured rather than handed to motion as
+   * `height: 'auto'`.
+   *
+   * `auto` is motion's most fragile case — it wants its own measurement pass,
+   * and the to-do composer is scarred by exactly this: when that pass did not
+   * land, the element sat at `height: 0` while `overflow-hidden` clipped its
+   * buttons out of the hit-test, so the form looked present and could not be
+   * clicked. Measuring here keeps the number ours, and the `auto` fallback means
+   * the worst case is no animation rather than no results.
+   *
+   * A layout effect, so the number is right before the frame paints.
+   */
+  const [panelHeight, setPanelHeight] = useState<number | null>(null)
+  useLayoutEffect(() => {
+    if (!showPanel) return
+    const el = listRef.current
+    if (el) setPanelHeight(el.offsetHeight)
+  }, [showPanel, results])
 
   // Typing narrows the list under the cursor, so the highlight has to come back
   // to the top or it ends up pointing at whatever survived at that index.
@@ -180,57 +202,70 @@ export function AccountSearch({ enabled, accounts, onPick }: Props) {
           />
         </div>
 
-        {showPanel && (
-          <div
-            ref={listRef}
-            id="account-search-results"
-            role="listbox"
-            /*
-             * Sized to land on roughly six and a half rows, so the half row is the
-             * hint that the list scrolls. Deep enough to choose from, shallow
-             * enough that the box does not become the screen — you are meant to
-             * narrow it by typing rather than scroll thirty accounts.
-             */
-            className="max-h-[28vh] overflow-y-auto px-1.5 pt-1.5 pb-3"
-          >
-            {results.length === 0 ? (
-              <p className="px-2.5 py-6 text-center text-[12px] text-[var(--color-ink-faint)]">
-                No account matches “{query.trim()}”.
-              </p>
-            ) : (
-              results.map((account, i) => (
-                <button
-                  key={account.orgId}
-                  id={`account-result-${account.orgId}`}
-                  type="button"
-                  role="option"
-                  aria-selected={i === active}
-                  data-active={i === active}
-                  // Pointer rather than hover state, so mousing across the list
-                  // moves the same highlight Enter acts on instead of a second one.
-                  onPointerMove={() => setActive(i)}
-                  onClick={() => pick(account.orgId)}
-                  className={cn(
-                    'flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors',
-                    i === active ? 'bg-[var(--color-surface)]' : 'bg-transparent'
-                  )}
-                >
-                  <AccountChip
-                    orgId={account.orgId}
-                    orgName={account.orgName}
-                    domain={account.domain}
-                  />
-                  <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
-                    {account.orgName}
-                  </span>
-                  <span className="shrink-0 text-[11px] tabular-nums text-[var(--color-ink-faint)]">
-                    {contactAge(account.lastTouchedAt)}
-                  </span>
-                </button>
-              ))
-            )}
-          </div>
-        )}
+        {/* Grows rather than appearing. The bar is the constant; the results are
+            what arrive, so the height is the only thing that should move. */}
+        <AnimatePresence initial={false}>
+          {showPanel && (
+            <motion.div
+              key="panel"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: panelHeight ?? 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2, ease: EASE_SWIFT }}
+              className="overflow-hidden"
+            >
+              <div
+                ref={listRef}
+                id="account-search-results"
+                role="listbox"
+                /*
+                 * Sized to land on roughly six and a half rows, so the half row is
+                 * the hint that the list scrolls. Deep enough to choose from,
+                 * shallow enough that the box does not become the screen — you are
+                 * meant to narrow it by typing rather than scroll thirty accounts.
+                 */
+                className="max-h-[28vh] overflow-y-auto px-1.5 pt-1.5 pb-3"
+              >
+                {results.length === 0 ? (
+                  <p className="px-2.5 py-6 text-center text-[12px] text-[var(--color-ink-faint)]">
+                    No account matches “{query.trim()}”.
+                  </p>
+                ) : (
+                  results.map((account, i) => (
+                    <button
+                      key={account.orgId}
+                      id={`account-result-${account.orgId}`}
+                      type="button"
+                      role="option"
+                      aria-selected={i === active}
+                      data-active={i === active}
+                      // Pointer rather than hover state, so mousing across the list
+                      // moves the same highlight Enter acts on instead of a second one.
+                      onPointerMove={() => setActive(i)}
+                      onClick={() => pick(account.orgId)}
+                      className={cn(
+                        'flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors',
+                        i === active ? 'bg-[var(--color-surface)]' : 'bg-transparent'
+                      )}
+                    >
+                      <AccountChip
+                        orgId={account.orgId}
+                        orgName={account.orgName}
+                        domain={account.domain}
+                      />
+                      <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
+                        {account.orgName}
+                      </span>
+                      <span className="shrink-0 text-[11px] tabular-nums text-[var(--color-ink-faint)]">
+                        {contactAge(account.lastTouchedAt)}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </DialogContent>
     </Dialog>
   )
