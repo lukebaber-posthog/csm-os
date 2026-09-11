@@ -1477,3 +1477,48 @@ through `useTodos` and did refresh. Verifying that the data arrives is not the
 same as verifying that it arrives everywhere, or pleasantly: the spinner flash
 was present in those first tests too, and counting cards in the DOM could not see
 it.
+
+## Account search (⌘K)
+
+- The board is a spatial tool and a card's column *is* information, but that
+  works against you when you know which account you want and not where it is.
+  With thirty accounts across six columns and horizontal scroll, that is most of
+  the time. The palette is the way in that does not depend on remembering where
+  something sits.
+- **`lib/accountSearch` is not `lib/accountMatch`**, and the split is deliberate.
+  `accountMatch` finds the account *named inside a sentence* and refuses an
+  ambiguous guess, because guessing wrong silently re-files a to-do. Search has
+  the opposite trade: the query is a fragment, several accounts legitimately
+  match, and the person is looking at the list and choosing, so being generous
+  costs nothing.
+- Ranked in tiers by how confident the match is, not by how much of the name it
+  covers: exact, name prefix, word prefix, name substring, domain substring,
+  then subsequence. That keeps "la" ordered Lahzo, LayerZero, Leland, TrustLayer
+  — rather than reordering them because the letters happened to sit closer
+  together in one. Folding drops punctuation and spacing on both sides, so
+  "US Mobile", "us-mobile" and "USMobile" are one string and "bootd" reaches
+  Boot.dev. Subsequence is what makes "wsbc" find WorkSafeBC.
+- An empty query returns the whole book in name order, so opening the palette and
+  pressing Down is a way to browse rather than a dead end.
+- The component owns its own shortcut instead of taking an `open` prop, so the
+  call site is one line and there is no open state to keep in step with a key
+  handler. It is disabled on the to-do board, where there is no account to open.
+- The "is another dialog already up?" guard matches
+  `[data-slot="dialog-content"][data-state="open"]`, and the state selector is
+  load-bearing. Radix keeps a closing dialog mounted until its exit animation
+  ends, so matching the slot alone also matches the palette's own corpse —
+  pressing the shortcut twice quickly meant the second press was swallowed by the
+  first one still leaving.
+- Highlight moves on `pointermove` rather than CSS `:hover`, so mousing across
+  the list moves the same highlight Enter acts on instead of lighting a second
+  one.
+
+### The preview cannot see any of this close
+
+Chasing the double-press bug turned up why: a plain 150ms CSS animation never
+fires `animationend` in the collaborative browser tab, and `requestAnimationFrame`
+never fires either — the tab produces no frames. Radix unmounts on `animationend`,
+so in that tab *every* dialog in the app stays mounted after it closes. It reads
+exactly like a leak in whatever you just wrote. Check `data-state` rather than
+presence before believing it, and prove the environment with a throwaway
+animation rather than reasoning about it.

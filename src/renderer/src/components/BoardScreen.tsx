@@ -23,6 +23,7 @@ import { SettingsDialog } from './SettingsDialog'
 import { CompletedDialog } from './CompletedDialog'
 import { CadenceTouchDialog, type PendingTouch } from './CadenceTouchDialog'
 import { AccountDrawer } from './AccountDrawer'
+import { AccountSearch, type SearchAccount } from './AccountSearch'
 import { Notice } from './ui/Notice'
 import { Spinner } from './ui/Spinner'
 
@@ -181,6 +182,24 @@ export function BoardScreen({ email, theme, onToggleTheme, onSignOut }: Props) {
   )
 
   /*
+   * Flattened from the columns rather than from `accounts`, so the palette holds
+   * whatever the board is currently showing — which is every account under both
+   * layouts, since each one has exactly one column in either.
+   */
+  const searchAccounts = useMemo<SearchAccount[]>(
+    () =>
+      board.columns
+        .flatMap((col) => col.cards)
+        .map((card) => ({
+          orgId: card.account.orgId,
+          orgName: card.account.orgName,
+          domain: card.account.domain,
+          lastTouchedAt: card.lastTouchedAt
+        })),
+    [board.columns]
+  )
+
+  /*
    * Sorting happens here rather than inside Board, so the array Board does its
    * drop-index arithmetic against is the same one the user is looking at.
    */
@@ -331,6 +350,13 @@ export function BoardScreen({ email, theme, onToggleTheme, onSignOut }: Props) {
         Mounted here rather than inside TodoBoard, so an effect keeps playing if you
         flick back to the accounts view mid-flight.
       */}
+      {/*
+        Cmd/Ctrl+K anywhere on the accounts board. It opens the same panel a card
+        click does, so there is nothing here the board cannot already do — only a
+        way to get at it without knowing where the card is.
+      */}
+      <AccountSearch enabled={onAccounts} accounts={searchAccounts} onPick={setOpenOrgId} />
+
       <SettingsDialog open={settingsOpen} email={email} onOpenChange={setSettingsOpen} />
 
       {/*

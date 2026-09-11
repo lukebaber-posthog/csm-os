@@ -102,6 +102,12 @@ Other, with a date and an optional note, all editable afterwards. Link behaves
 differently from the rest because it records something you *sent*, so it takes a
 URL and renders it as a hyperlink on the entry.
 
+**Press ⌘K (Ctrl+K on Windows) to find an account by name.** A search box opens
+in the middle of the screen, typing narrows the book, and Enter opens the top
+match's panel — the same panel clicking its card opens. Arrow keys move down the
+list if the one you want isn't first. It works in both layouts, and matching is
+forgiving: "us mob", "usmobile" and "bootd" all land where you'd expect.
+
 ### The to-do board
 
 Reached by the pill in the header. Three columns by horizon (This Month, This
