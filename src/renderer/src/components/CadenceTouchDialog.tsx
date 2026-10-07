@@ -6,6 +6,7 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
+import type { TouchChannel } from '../../../shared/types'
 import { addTouch, type TouchValues } from '../lib/board'
 import { toDateInput } from '../lib/format'
 import { cadenceDaysFor } from '../lib/layouts'
@@ -19,6 +20,8 @@ export interface PendingTouch {
   /** The cadence column the card was dropped into. */
   stageKey: string
   stageLabel: string
+  /** The touch channel the form starts on — see `defaultTouchChannel`. */
+  channel: TouchChannel
 }
 
 interface Props {
@@ -111,6 +114,7 @@ export function CadenceTouchDialog({ pending, email, onLogged, onClose }: Props)
             key={pending.orgId + pending.stageKey}
             submitLabel="Log touch"
             defaultDate={dateForStage(pending.stageKey)}
+            defaultChannel={pending.channel}
             onSubmit={submit}
           />
         )}

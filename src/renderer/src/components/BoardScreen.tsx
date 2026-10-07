@@ -15,6 +15,7 @@ import {
   type ColumnSort
 } from '../lib/columnSort'
 import { isMainView, type MainView } from '../lib/views'
+import { defaultTouchChannel } from '../lib/touchChannels'
 import { TopBar } from './TopBar'
 import { Board } from './Board'
 import { TodoBoard } from './TodoBoard'
@@ -301,16 +302,17 @@ export function BoardScreen({ email, theme, onToggleTheme, onSignOut }: Props) {
               canDeleteColumn={board.canDeleteColumn}
               computed={board.computed}
               onRequestTouch={(orgId, stageKey) => {
-                const account = board.columns
+                const card = board.columns
                   .flatMap((c) => c.cards)
-                  .find((c) => c.account.orgId === orgId)?.account
+                  .find((c) => c.account.orgId === orgId)
                 const stage = board.columns.find((c) => c.stage.key === stageKey)?.stage
-                if (!account || !stage) return
+                if (!card || !stage) return
                 setPendingTouch({
                   orgId,
-                  orgName: account.orgName,
+                  orgName: card.account.orgName,
                   stageKey,
-                  stageLabel: stage.label
+                  stageLabel: stage.label,
+                  channel: defaultTouchChannel(card.channel)
                 })
               }}
               sortOf={sortOf}

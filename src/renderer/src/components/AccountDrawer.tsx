@@ -5,6 +5,7 @@ import { useTouchLog } from '../hooks/useTouchLog'
 import { CHANNEL_LABELS, type ContactChannel } from '../lib/channels'
 import { arrExact, contactAge } from '../lib/format'
 import { EASE_SWIFT } from '../lib/motion'
+import { defaultTouchChannel } from '../lib/touchChannels'
 import { Button } from '@/components/ui/button'
 import { ChannelSlider } from './ChannelSlider'
 import { Notice } from './ui/Notice'
@@ -142,7 +143,11 @@ export function AccountDrawer({
             <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-ink-muted)]">
               Log outreach
             </h3>
-            <TouchForm submitLabel="Log touch" onSubmit={log.add} />
+            <TouchForm
+              submitLabel="Log touch"
+              defaultChannel={defaultTouchChannel(card.channel)}
+              onSubmit={log.add}
+            />
           </div>
 
           <div className="px-5 py-4">

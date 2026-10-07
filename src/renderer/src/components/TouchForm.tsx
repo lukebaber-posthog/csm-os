@@ -31,6 +31,12 @@ interface Props {
    * it there. Ignored while editing, where the touch's own date wins.
    */
   defaultDate?: string
+  /**
+   * The channel a new touch starts on — see `defaultTouchChannel`. Followed
+   * until a channel is picked by hand, so setting "Reachable on" with the form
+   * already open still moves it. Ignored while editing.
+   */
+  defaultChannel?: TouchChannel
   /** Tighter spacing, for use inline inside the history list. */
   compact?: boolean
 }
@@ -51,9 +57,11 @@ export function TouchForm({
   onSubmit,
   onCancel,
   compact,
-  defaultDate
+  defaultDate,
+  defaultChannel
 }: Props) {
-  const [channel, setChannel] = useState<TouchChannel>(initial?.channel ?? 'email')
+  const [picked, setChannel] = useState<TouchChannel | null>(initial?.channel ?? null)
+  const channel = picked ?? defaultChannel ?? 'email'
   const [date, setDate] = useState(
     initial ? toDateInput(initial.occurredAt) : (defaultDate ?? todayInput())
   )

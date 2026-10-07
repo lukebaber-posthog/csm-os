@@ -1,4 +1,5 @@
 import type { TouchChannel } from '../shared/types'
+import type { ContactChannel } from './channels'
 
 /**
  * Display and validation for `TouchChannel` — how one logged outreach went out.
@@ -26,6 +27,24 @@ export function isTouchChannel(value: unknown): value is TouchChannel {
     typeof value === 'string' &&
     Object.prototype.hasOwnProperty.call(TOUCH_CHANNEL_LABELS, value)
   )
+}
+
+/**
+ * The channel a new touch starts on, given where the account is reachable —
+ * the likeliest way the outreach went out. Teams and Discord have no touch
+ * channel of their own, so they land on Other; an account with nothing set
+ * starts on Email.
+ */
+export function defaultTouchChannel(reachableOn: ContactChannel | null): TouchChannel {
+  switch (reachableOn) {
+    case 'slack':
+      return 'slack'
+    case 'teams':
+    case 'discord':
+      return 'other'
+    default:
+      return 'email'
+  }
 }
 
 /** The only channel whose entry carries a URL. */
